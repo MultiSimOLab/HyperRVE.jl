@@ -153,6 +153,20 @@ end
     close_gmsh()
 end
 
+@testset "B-spline bodies crossing periodic faces" begin
+    bodies = [Ellipsoid((0.05, 0.5, 0.5), (0.2, 0.1, 0.15)),
+              Rotate(Ellipsoid((0.5, 0.95, 0.5), (0.25, 0.1, 0.1)); axis=(1, 1, 1), angle=0.6),
+              Scale(Sphere((0.5, 0.5, 0.02), 0.1), (2, 1, 1))]
+    for g in bodies, m in (:matrix, nothing)
+        res = generate(RVE(Cell((2.0, 1.0, 1.0); origin=(-1.0, 0.0, 0.0)), Phase(:p, Translate(g, (-1.0, 0.0, 0.0)));
+                           matrix=m); h=0.12)
+        @test Set(["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"]) ⊆ Set(group_names(res; dim=2)) || m === nothing
+        @test all(x -> x.ok, res.periodicity)
+        crossing = findall(x -> x.npairs > 0, res.periodicity)
+        @test !isempty(crossing)
+    end
+end
+
 @testset "frame mapping of transforms in a shifted, scaled cell" begin
     phases(c, L) = [Phase(:e, Rotate(Rotate(Ellipsoid(c .+ (0.0, 0.0, 0.0), (0.25L, 0.1L, 0.1L)); axis=(0, 1, 0), angle=π / 4);
                                     axis=(0, 0, 1), angle=π / 4)),

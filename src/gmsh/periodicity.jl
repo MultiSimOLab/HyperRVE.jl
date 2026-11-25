@@ -8,23 +8,25 @@ end
 
 function set_periodicity!(rve::RVE{D}, frame::Frame{D}, on=_boundary_entities(rve, frame)) where {D}
     any(rve.cell.periodic) || return nothing
-    tol = geomtol(frame)
+    # pairing compares exact (padded) bounding boxes of an entity and its translate: the
+    # padding is the same on both sides, but can reach ~1e-5 for B-spline cuts
+    tol = 100 * geomtol(frame)
     ext = to_frame_length.(Ref(frame), domain_size(rve))
     for d in 1:D
         rve.cell.periodic[d] || continue
-        masters = sort([t for ((dim, t), ps) in on if dim == D - 1 && (d, 1) in ps])
-        slaves = sort([t for ((dim, t), ps) in on if dim == D - 1 && (d, 2) in ps])
+        masters = sort([t for ((dim, t), ps) in on.planes if dim == D - 1 && (d, 1) in ps])
+        slaves = sort([t for ((dim, t), ps) in on.planes if dim == D - 1 && (d, 2) in ps])
         length(masters) == length(slaves) ||
             throw(PeriodicityError(d, "the $(length(masters)) entities on $(_face_name(d, 1)) and the " *
                                       "$(length(slaves)) on $(_face_name(d, 2)) cannot be paired; check for " *
                                       "inclusions tangent or nearly tangent to a face"))
         used = Set{Int32}()
         for m in masters
-            bm = collect(gmsh.model.getBoundingBox(D - 1, m))
+            bm = collect(on.bbox[(Int32(D - 1), m)])
             bm[d] += ext[d]
             bm[3+d] += ext[d]
             cands = [s for s in slaves if !(s in used) &&
-                     maximum(abs.(collect(gmsh.model.getBoundingBox(D - 1, s)) .- bm)) < tol]
+                     maximum(abs.(collect(on.bbox[(Int32(D - 1), s)]) .- bm)) < tol]
             if length(cands) > 1
                 cm = collect(gmsh.model.occ.getCenterOfMass(D - 1, m))
                 cm[d] += ext[d]

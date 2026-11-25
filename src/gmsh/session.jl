@@ -71,7 +71,9 @@ end
 
 Write the mesh of a live result (inside `generate(rve) do res ... end`, or after
 `generate(...; keep_open = true)`). The format follows the extension (`.msh`, `.vtk`, ...);
-`.msh` files are written in MSH 4.1 ASCII with the periodic links in physical units.
+`.msh` and `.msh4` files are written in MSH 4.1 ASCII with the periodic links in physical
+units (other Gmsh extensions such as `.msh2` select other formats and are written as Gmsh
+does, without that correction).
 
 Use `write_mesh` rather than `gmsh.write`: the model is built in a normalised frame (the CAD
 entities stay in it, only the mesh nodes are mapped back to physical coordinates), so a
@@ -79,6 +81,7 @@ entities stay in it, only the mesh nodes are mapped back to physical coordinates
 misplace the periodic nodes when reading it back.
 """
 function write_mesh(r::RVEMesh, path::AbstractString)
+    previous = _gmsh_isopen() ? gmsh.model.getCurrent() : ""
     _require_live(r)
     p = abspath(path)
     isdir(dirname(p)) || throw(ArgumentError("output directory $(dirname(p)) does not exist"))
@@ -92,6 +95,7 @@ function write_mesh(r::RVEMesh, path::AbstractString)
     finally
         gmsh.option.setNumber("Mesh.MshFileVersion", v)
         gmsh.option.setNumber("Mesh.Binary", b)
+        previous in gmsh.model.list() && gmsh.model.setCurrent(previous)
     end
     p in r.files || push!(r.files, p)
     return p
