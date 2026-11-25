@@ -19,7 +19,7 @@ export Fuse, Cut, Intersect, Translate, Rotate, Scale
 export Phase, RVE, supercell
 export MeshOptions, InterfaceRefinement
 export generate, RVEMesh, write_mesh, view_mesh, close_gmsh, PeriodicityError
-export volume, volume_fraction, volume_fractions, phase_names, group_names, group_tag
+export volume, volume_fraction, volume_fractions, phase_names, group_names, group_tag, quality_report
 
 include("vectors.jl")
 include("cell.jl")

@@ -15,7 +15,14 @@ struct GroupInfo
     entities::Vector{Int}
 end
 
-"""Summary statistics of the generated mesh (lengths in the units of the cell)."""
+"""
+Summary statistics of the generated mesh (lengths in the units of the cell). Quality is the
+signed inverse condition number (SICN, 1 = regular element, <= 0 = inverted);
+`quality_histogram[i]` counts elements with SICN in `[(i-1)/10, i/10)` (non-positive values
+in the first bin). `min_jacobian` is the minimum scaled Jacobian of order-2 elements (NaN for
+order 1). `worst_point`/`worst_phase` locate the element of lowest quality and
+`phase_quality` gives the minimum quality per phase. See [`quality_report`](@ref).
+"""
 struct MeshStats
     nnodes::Int
     nelements::Int
@@ -24,6 +31,12 @@ struct MeshStats
     mean_quality::Float64
     hmin::Float64
     hmax::Float64
+    quality_histogram::NTuple{10,Int}
+    ninverted::Int
+    min_jacobian::Float64
+    worst_point::NTuple{3,Float64}
+    worst_phase::String
+    phase_quality::Vector{Pair{String,Float64}}
 end
 
 """Result of the node-by-node check of periodicity along one direction."""
@@ -63,6 +76,36 @@ struct RVEMesh{D}
     periodicity::Vector{PeriodicityCheck}
     files::Vector{String}
     model::String
+end
+
+"""
+    quality_report([io = stdout], res)
+
+Print the quality statistics of a generated mesh: summary, histogram of the element quality
+(SICN), minimum per phase and the location of the worst element. Works after Gmsh is closed.
+"""
+quality_report(r::RVEMesh) = quality_report(stdout, r)
+function quality_report(io::IO, r::RVEMesh{D}) where {D}
+    s = r.stats
+    if s === nothing
+        println(io, "no mesh (geometry_only = true)")
+        return nothing
+    end
+    println(io, @sprintf("%d %s of order %d, %d nodes; quality (SICN) min %.3f, mean %.3f%s",
+                         s.nelements, D == 3 ? "tetrahedra" : "triangles", s.order, s.nnodes,
+                         s.min_quality, s.mean_quality,
+                         s.order == 2 ? @sprintf(", min scaled Jacobian %.3f", s.min_jacobian) : ""))
+    s.ninverted > 0 && println(io, "  ", s.ninverted, " inverted elements")
+    n = max(s.nelements, 1)
+    for (i, c) in enumerate(s.quality_histogram)
+        bar = repeat("█", round(Int, 40 * c / n))
+        println(io, @sprintf("  [%.1f, %.1f)  %8d  %5.1f%%  %s", (i - 1) / 10, i / 10, c, 100c / n, bar))
+    end
+    for (p, q) in s.phase_quality
+        println(io, @sprintf("  %-14s min quality %.3f", p, q))
+    end
+    println(io, @sprintf("  worst element in phase %s at (%.4g, %.4g, %.4g)", s.worst_phase, s.worst_point...))
+    return nothing
 end
 
 """    phase_names(res)  Names of the phases (matrix first, if any)."""
@@ -126,7 +169,9 @@ function Base.show(io::IO, ::MIME"text/plain", r::RVEMesh{D}) where {D}
         s = r.stats
         println(io, @sprintf("  mesh: %d nodes, %d %s (order %d), min quality %.3f, h ∈ [%.3g, %.3g]",
                              s.nnodes, s.nelements, D == 3 ? "tetrahedra" : "triangles", s.order,
-                             s.min_quality, s.hmin, s.hmax))
+                             s.min_quality, s.hmin, s.hmax),
+                s.order == 2 ? @sprintf(", min scaled Jacobian %.3f", s.min_jacobian) : "",
+                s.ninverted > 0 ? ", $(s.ninverted) INVERTED" : "")
     end
     if !isempty(r.periodicity)
         print(io, "  periodicity:")

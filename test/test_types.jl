@@ -85,8 +85,15 @@ end
     @test_throws ArgumentError supercell(RVE(c, Phase(:a, s)), (2, 2))
     @test_throws ArgumentError supercell(RVE(c, Phase(:a, s)), 0)
     @test occursin("tiling 2×2×2", sprint(show, supercell(RVE(c, Phase(:a, s)), 2)))
-    @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); mesh=MeshOptions(order=2))
-    @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); mesh=MeshOptions(optimize=false))
+    @test_throws ArgumentError MeshOptions(order=3)
+    @test_throws ArgumentError MeshOptions(algorithm=:nope)
+    @test_throws ArgumentError MeshOptions(surface_algorithm=:nope)
+    @test_throws ArgumentError MeshOptions(optimize=:maybe)
+    @test_throws ArgumentError MeshOptions(optimize_curved=:optimize)            # needs order 2
+    @test_throws ArgumentError MeshOptions(order=2, curved=false, optimize_curved=:fast)
+    @test_throws MethodError MeshOptions(recombine=true)
+    @test MeshOptions(optimize=false).optimize == :none
+    @test MeshOptions().algorithm == :delaunay && MeshOptions().surface_algorithm == :frontal
     @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); output=joinpath(OUTDIR, "nodir", "x.msh"))
     @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); h=0.1, mesh=MeshOptions(h=0.2))
     @test_logs (:warn, r"Fibre") RVE(c, Phase(:a, Cylinder((-0.1, 0.5, 0.5), (2, 0, 0), 0.1)))

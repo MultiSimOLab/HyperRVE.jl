@@ -1,7 +1,7 @@
 """
     MeshOptions(; h = nothing, hmin = nothing, hmax = nothing, growth = 1.3, curvature = 6,
-                periodic_sizes = true, order = 1, algorithm = :default, optimize = true,
-                recombine = false)
+                periodic_sizes = true, order = 1, curved = true, algorithm = :default,
+                surface_algorithm = :default, optimize = true, optimize_curved = :none)
 
 Global meshing options, all lengths in the units of the cell.
 
@@ -18,6 +18,20 @@ Global meshing options, all lengths in the units of the cell.
   meshing with refined inclusions takes about 1.5-5 times longer than without it (a larger
   `growth` shortens the transitions and reduces the cost). Only meant to be switched off for
   comparisons.
+- `order`: 1 (linear) or 2 (quadratic elements; with `curved = true` the mid-nodes lie on the
+  curved interfaces, with `curved = false` the elements are straight-sided). Order-2 meshes are
+  periodic in Gmsh's sense, but GridapGmsh (0.7) reads periodic links only for first-order
+  meshes: for Gridap/HyperFEM with periodic cells, generate an order-1 mesh and use
+  higher-order finite element spaces on it.
+- `algorithm`: 3D mesher, `:delaunay` (default), `:frontal` or `:hxt`; `surface_algorithm`:
+  `:frontal` (default), `:delaunay`, `:meshadapt` or `:automatic` (also used for 2D cells).
+- `optimize`: tetrahedra optimisation, `:default` (`true`), `:netgen` or `:none` (`false`).
+- `optimize_curved`: untangling of curved order-2 elements, `:none`, `:elastic` (recommended:
+  removes inverted curved elements and keeps the periodic faces matching), `:fast` or
+  `:optimize` (Gmsh's general optimiser; it moves nodes of periodic faces, so it is only
+  accepted for cells without periodic directions). Requires `order = 2`. Coarse curved
+  order-2 meshes may contain inverted elements: `generate` warns and `res.stats.ninverted`
+  counts them.
 """
 struct MeshOptions
     h::Union{Nothing,Float64}
@@ -27,13 +41,20 @@ struct MeshOptions
     curvature::Int
     periodic_sizes::Bool
     order::Int
+    curved::Bool
     algorithm::Symbol
-    optimize::Bool
-    recombine::Bool
+    surface_algorithm::Symbol
+    optimize::Symbol
+    optimize_curved::Symbol
 end
 
+const _ALG3D = Dict(:delaunay => 1, :frontal => 4, :hxt => 10)
+const _ALG2D = Dict(:frontal => 6, :delaunay => 5, :meshadapt => 1, :automatic => 2)
+const _HO = Dict(:optimize => "HighOrder", :elastic => "HighOrderElastic", :fast => "HighOrderFastCurving")
+
 function MeshOptions(; h=nothing, hmin=nothing, hmax=nothing, growth=1.3, curvature=6,
-                     periodic_sizes=true, order=1, algorithm=:default, optimize=true, recombine=false)
+                     periodic_sizes=true, order=1, curved=true, algorithm=:default,
+                     surface_algorithm=:default, optimize=true, optimize_curved=:none)
     _opt(x, n) = x === nothing ? nothing : _positive(x, n)
     h, hmin, hmax = _opt(h, "MeshOptions h"), _opt(hmin, "MeshOptions hmin"), _opt(hmax, "MeshOptions hmax")
     hmin !== nothing && hmax !== nothing && hmin > hmax &&
@@ -46,18 +67,27 @@ function MeshOptions(; h=nothing, hmin=nothing, hmax=nothing, growth=1.3, curvat
     g > 1 || throw(ArgumentError("MeshOptions: growth must be > 1, got $g"))
     curvature isa Real && isinteger(curvature) && curvature >= 0 ||
         throw(ArgumentError("MeshOptions: curvature must be a whole number >= 0, got $curvature"))
-    return MeshOptions(h, hmin, hmax, g, Int(curvature), Bool(periodic_sizes), Int(order), Symbol(algorithm),
-                       Bool(optimize), Bool(recombine))
+    order in (1, 2) || throw(ArgumentError("MeshOptions: order must be 1 or 2 (higher orders are not " *
+                                           "supported: periodic matching and the Gridap reader are only tested up to 2)"))
+    alg = algorithm == :default ? :delaunay : Symbol(algorithm)
+    haskey(_ALG3D, alg) || throw(ArgumentError("MeshOptions: algorithm must be one of $(sort(collect(keys(_ALG3D)))), got $algorithm"))
+    salg = surface_algorithm == :default ? :frontal : Symbol(surface_algorithm)
+    haskey(_ALG2D, salg) ||
+        throw(ArgumentError("MeshOptions: surface_algorithm must be one of $(sort(collect(keys(_ALG2D)))), got $surface_algorithm"))
+    opt = optimize === true ? :default : optimize === false ? :none : Symbol(optimize)
+    opt in (:default, :netgen, :none) ||
+        throw(ArgumentError("MeshOptions: optimize must be true/false or :default, :netgen, :none, got $optimize"))
+    oc = Symbol(optimize_curved)
+    (oc == :none || haskey(_HO, oc)) ||
+        throw(ArgumentError("MeshOptions: optimize_curved must be :none, :optimize, :elastic or :fast, got $optimize_curved"))
+    oc != :none && !(order == 2 && curved) &&
+        throw(ArgumentError("MeshOptions: optimize_curved needs order = 2 and curved = true"))
+    return MeshOptions(h, hmin, hmax, g, Int(curvature), Bool(periodic_sizes), Int(order), Bool(curved),
+                       alg, salg, opt, oc)
 end
 
 "Copy of `o` with some fields replaced."
 _with(o::MeshOptions; kw...) =
     MeshOptions(; (f => getfield(o, f) for f in fieldnames(MeshOptions))..., kw...)
 
-function _check(o::MeshOptions)
-    o.optimize || throw(ArgumentError("MeshOptions: optimize = false is not implemented yet"))
-    o.order == 1 || throw(ArgumentError("MeshOptions: order = $(o.order) is not implemented yet"))
-    o.algorithm == :default || throw(ArgumentError("MeshOptions: algorithm = $(o.algorithm) is not implemented yet"))
-    o.recombine && throw(ArgumentError("MeshOptions: recombine is not implemented yet"))
-    return o
-end
+_check(o::MeshOptions) = o

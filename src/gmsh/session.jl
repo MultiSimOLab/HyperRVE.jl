@@ -9,7 +9,9 @@ _nopopup() = "-nopopup" in ARGS || get(ENV, "RVES_NOPOPUP", "") == "1"
 const _SESSION_OPTIONS = ("General.Terminal", "Geometry.OCCBoundsUseStl", "Mesh.MeshSizeExtendFromBoundary",
                           "Mesh.MeshSizeFromPoints", "Mesh.MeshSizeFromCurvature",
                           "Mesh.MshFileVersion", "Mesh.SaveAll", "Mesh.Binary", "Mesh.MeshSizeMin",
-                          "Mesh.MeshSizeMax", "General.NumThreads")
+                          "Mesh.MeshSizeMax", "General.NumThreads", "Mesh.Algorithm", "Mesh.Algorithm3D",
+                          "Mesh.Optimize", "Mesh.OptimizeNetgen", "Mesh.ElementOrder", "Mesh.SecondOrderLinear",
+                          "Mesh.HighOrderOptimize")
 
 function _unique_model_name(name)
     names = gmsh.model.list()
