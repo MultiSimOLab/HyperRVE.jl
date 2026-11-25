@@ -8,7 +8,8 @@ Build the geometry of `rve` in Gmsh, assign phases, create physical groups, impo
 periodicity and mesh it. Gmsh is initialised and finalised automatically; the returned
 [`RVEMesh`](@ref) is plain Julia data.
 
-- `h`: global element size (shorthand for `mesh = MeshOptions(h = h)`).
+- `h`: global element size (shorthand for `mesh = MeshOptions(h = h)`); it is reduced near
+  inclusions with refinement and near boundaries of small curvature radius (see [`MeshOptions`](@ref)).
 - `output`: file name or vector of file names written before Gmsh is closed (`.msh`, `.vtk`...).
 - `geometry_only`: stop before meshing (volumes and groups only; fast).
 - `check_periodicity`: verify node by node that opposite periodic faces have matching meshes
@@ -75,12 +76,13 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
         end
         for p in files
             gmsh.write(p)
+            _physical_periodic_affine!(p, frame)
         end
         res = RVEMesh{D}(rve, mesh, phases, groups, stats, checks, files, model)
         verbosity >= 1 && @info sprint(show, MIME("text/plain"), res)
         f === nothing || f(res)
         if view
-            _nopopup() ? (@info "generate: GUI disabled (-nopopup / RVES_NOPOPUP)") : gmsh.fltk.run()
+            _run_gui()
         end
         res
     end

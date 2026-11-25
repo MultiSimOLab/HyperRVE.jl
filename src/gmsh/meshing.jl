@@ -45,7 +45,13 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, opts::MeshOptions)
     gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
     gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
     gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", opts.curvature)
-    gmsh.model.mesh.generate(D)
+    try
+        gmsh.model.mesh.generate(D)
+    catch e
+        e isa ErrorException || rethrow()
+        error("Gmsh failed to mesh the RVE ($(e.msg)). Common causes: an inclusion crossing or " *
+              "touching a face by a tiny amount (sliver), or a global size h much larger than the inclusions.")
+    end
     return nothing
 end
 
@@ -57,6 +63,7 @@ function mesh_stats(frame::Frame{D}, opts::MeshOptions) where {D}
     q = gmsh.model.mesh.getElementQualities(tags, "minSICN")
     emin = gmsh.model.mesh.getElementQualities(tags, "minEdge")
     emax = gmsh.model.mesh.getElementQualities(tags, "maxEdge")
+    # called after restore_frame!: node coordinates are physical
     return MeshStats(length(ntags), length(tags), opts.order, minimum(q), sum(q) / length(q),
-                     from_frame_length(frame, minimum(emin)), from_frame_length(frame, maximum(emax)))
+                     minimum(emin), maximum(emax))
 end

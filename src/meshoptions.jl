@@ -1,14 +1,16 @@
 """
-    MeshOptions(; h = nothing, curvature = 12, order = 1, algorithm = :default, optimize = true,
+    MeshOptions(; h = nothing, curvature = 6, order = 1, algorithm = :default, optimize = true,
                 recombine = false)
 
 Global meshing options. `h` is the global element size in the units of the cell (default:
 smallest cell edge / 10). `curvature` is the minimum number of elements per 2π along curved
-boundaries, so that small inclusions are resolved even when `h` is large (0 disables it).
+boundaries: near a boundary of radius of curvature `R` the size is at most `2πR/curvature`,
+so that inclusions smaller than `h` are still resolved (with the default 6 this only acts
+where `R < h`; 0 disables it).
 """
 Base.@kwdef struct MeshOptions
     h::Union{Nothing,Float64} = nothing
-    curvature::Int = 12
+    curvature::Int = 6
     order::Int = 1
     algorithm::Symbol = :default
     optimize::Bool = true

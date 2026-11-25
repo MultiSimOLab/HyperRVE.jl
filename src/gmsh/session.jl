@@ -8,7 +8,7 @@ _nopopup() = "-nopopup" in ARGS || get(ENV, "RVES_NOPOPUP", "") == "1"
 # Options changed by `generate`; restored afterwards when the session belongs to the caller.
 const _SESSION_OPTIONS = ("General.Terminal", "Geometry.OCCBoundsUseStl", "Mesh.MeshSizeExtendFromBoundary",
                           "Mesh.MeshSizeFromPoints", "Mesh.MeshSizeFromCurvature",
-                          "Mesh.MshFileVersion", "Mesh.SaveAll")
+                          "Mesh.MshFileVersion", "Mesh.SaveAll", "Mesh.Binary")
 
 function _unique_model_name(name)
     names = gmsh.model.list()
@@ -26,6 +26,7 @@ function _with_session(f, name::AbstractString; keep_open::Bool, verbosity::Int)
     # depend on them (they can, e.g., switch the output to MSH 2.2)
     owned && gmsh.initialize(String[], false)
     saved = owned ? nothing : [(o, gmsh.option.getNumber(o)) for o in _SESSION_OPTIONS]
+    previous = owned ? "" : gmsh.model.getCurrent()
     model = owned ? String(name) : _unique_model_name(name)
     ok = false
     try
@@ -33,6 +34,7 @@ function _with_session(f, name::AbstractString; keep_open::Bool, verbosity::Int)
         gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 0)
         gmsh.option.setNumber("Mesh.MshFileVersion", 4.1)
         gmsh.option.setNumber("Mesh.SaveAll", 0)
+        gmsh.option.setNumber("Mesh.Binary", 0)
         gmsh.model.add(model)
         r = f(model)
         ok = true
@@ -50,6 +52,7 @@ function _with_session(f, name::AbstractString; keep_open::Bool, verbosity::Int)
             for (o, v) in saved
                 gmsh.option.setNumber(o, v)
             end
+            previous in gmsh.model.list() && gmsh.model.setCurrent(previous)
         end
     end
 end
@@ -72,7 +75,15 @@ Write the mesh of a live result (inside `generate(rve) do res ... end`, or after
 function write_mesh(r::RVEMesh, path::AbstractString)
     _require_live(r)
     p = abspath(path)
-    gmsh.write(p)
+    isdir(dirname(p)) || throw(ArgumentError("output directory $(dirname(p)) does not exist"))
+    v = gmsh.option.getNumber("Mesh.MshFileVersion")
+    gmsh.option.setNumber("Mesh.MshFileVersion", 4.1)
+    try
+        gmsh.write(p)
+        _physical_periodic_affine!(p, Frame(r.rve))
+    finally
+        gmsh.option.setNumber("Mesh.MshFileVersion", v)
+    end
     push!(r.files, p)
     return p
 end
@@ -85,7 +96,7 @@ Open the Gmsh GUI on a live result (blocking). Ignored when Julia runs with `-no
 """
 function view_mesh(r::RVEMesh)
     _require_live(r)
-    _nopopup() ? (@info "view_mesh: GUI disabled (-nopopup / RVES_NOPOPUP)") : gmsh.fltk.run()
+    _run_gui()
     return nothing
 end
 
@@ -95,3 +106,16 @@ end
 Finalise Gmsh if it is initialised (for sessions left open with `keep_open = true`).
 """
 close_gmsh() = (_gmsh_isopen() && gmsh.finalize(); nothing)
+
+# The CAD model stays in normalised coordinates while the mesh is physical: show only the mesh.
+function _run_gui()
+    if _nopopup()
+        @info "Gmsh GUI disabled (-nopopup / RVES_NOPOPUP)"
+        return nothing
+    end
+    for o in ("Geometry.Points", "Geometry.Curves", "Geometry.Surfaces", "Geometry.Volumes")
+        gmsh.option.setNumber(o, 0)
+    end
+    gmsh.fltk.run()
+    return nothing
+end

@@ -16,7 +16,7 @@ its phase, defines physical groups for phases, faces, edges and corners, imposes
 meshing on opposite faces and checks it node by node. The meshes are written in MSH 4.1 and
 can be read directly with GridapGmsh.
 
-# MiniApps included  
+# Examples  
 
  <p align="center"> 
 &nbsp; &nbsp; &nbsp; &nbsp;

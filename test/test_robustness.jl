@@ -18,16 +18,19 @@ end
         R = 0.4 + δ
         res = generate(RVE(unitcell(), Phase(:p, Sphere(c, R))); h=0.15)
         @test volume(res, :p) ≈ sphere_vol(R) rtol = 1e-6
-        @test all(x -> x.ok, res.periodicity)
+        @test length(res[:p].entities) == 2     # the image was created
+        @test all(x -> x.ok && x.npairs > 0, res.periodicity)
     end
 end
 
 @testset "bodies flush with or tangent to a periodic face" begin
     flush = [Box((0, 0, 0), (0.5, 0.5, 0.5)), Cylinder((0.5, 0.5, 0.5), (0.5, 0, 0), 0.2),
              Box((0.25, 0.25, 0.5), (0.5, 0.5, 0.5))]
-    for g in flush
+    vols = (0.125, π * 0.2^2 * 0.5, 0.125)
+    for (g, v) in zip(flush, vols)
         res = generate(RVE(unitcell(), Phase(:p, g)); h=0.15)
-        @test all(x -> x.ok, res.periodicity)
+        @test all(x -> x.ok && x.npairs > 0, res.periodicity)
+        @test volume(res, :p) ≈ v rtol = 1e-6
     end
     # a sphere tangent to a face from inside: either a valid periodic mesh or a PeriodicityError
     ok = try
@@ -39,12 +42,36 @@ end
 end
 
 @testset "meshed at small and large scales, no matrix, overlap with an image" begin
-    for k in (1e-3, 1e3)
-        cell = Cell((k, 2k, k); origin=(3k, -k, 0))
+    counts = Int[]
+    for k in (1e-6, 1e-3, 0.1, 1.0, 1e3, 1e6)
+        cell = Cell((k, 2k, k); origin=(3k, -k, 0.5k))
         res = generate(RVE(cell, Phase(:p, Sphere(cellpoint(cell, (0, 0, 0)), 0.3k))); h=0.2k)
-        @test all(x -> x.ok, res.periodicity)
+        @test length(res.periodicity) == 3
+        @test all(x -> x.ok && x.npairs > 0, res.periodicity)
+        @test "xmin" in group_names(res; dim=2) && "corners" in group_names(res; dim=0)
         @test volume_fraction(res, :p) ≈ sphere_vol(0.3) / 2 rtol = 1e-6
-        @test res.stats.hmax < k
+        @test volume(res) ≈ 2k^3 rtol = 1e-12
+        @test res.stats.hmax < k && res.stats.hmin > 0.001k
+        push!(counts, res.stats.nelements)
+    end
+    # the same computation runs at every scale (normalised frame; the frame origin and scale
+    # are not exactly representable, so allow tiny differences)
+    @test maximum(counts) - minimum(counts) <= 0.01 * minimum(counts)
+    # written files carry physical coordinates and periodic links
+    k = 1e-6
+    f = joinpath(OUTDIR, "micro.msh")
+    generate(RVE(Cell((k, k, k); origin=(5k, 0, 0)), Phase(:p, Sphere((5k, 0, 0), 0.3k))); h=0.2k, output=f)
+    gmsh.initialize(String[], false)
+    try
+        gmsh.option.setNumber("General.Terminal", 0)
+        gmsh.open(f)
+        x = reshape(gmsh.model.mesh.getNodes()[2], 3, :)
+        @test minimum(x[1, :]) ≈ 5k rtol = 1e-9
+        @test maximum(x[1, :]) ≈ 6k rtol = 1e-9
+        linked = count(e -> gmsh.model.mesh.getPeriodicNodes(e...)[1] != e[2], gmsh.model.getEntities(2))
+        @test linked > 0
+    finally
+        gmsh.finalize()
     end
     lattice = RVE(unitcell(), Phase(:solid, Sphere((0.5, 0.5, 0.5), 0.6)); matrix=nothing)
     generate(lattice; h=0.15) do res
@@ -83,15 +110,24 @@ end
     finally
         gmsh.finalize()
     end
-    # caller-owned session: options restored
+    # caller-owned session: options and current model restored; write_mesh still writes 4.1
     gmsh.initialize(String[], false)
     try
-        opts = ("General.Terminal", "Mesh.MeshSizeFromPoints", "Mesh.MshFileVersion", "Geometry.OCCBoundsUseStl")
+        opts = RVEs._SESSION_OPTIONS
         gmsh.option.setNumber("General.Terminal", 0)
         gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
+        gmsh.model.add("mine")
         before = [gmsh.option.getNumber(o) for o in opts]
-        generate(rve1; h=0.3)
+        r = generate(rve1; h=0.3)
         @test [gmsh.option.getNumber(o) for o in opts] == before
+        @test gmsh.model.getCurrent() == "mine"
+        @test_throws ErrorException generate(RVE(unitcell(), Phase(:p, Cut(Sphere((0.5, 0.5, 0.5), 0.1),
+                                                                            Sphere((0.5, 0.5, 0.5), 0.2)))))
+        @test gmsh.model.getCurrent() == "mine"
+        f3 = joinpath(OUTDIR, "caller.msh")
+        write_mesh(r, f3)
+        @test startswith(readlines(f3)[2], "4.1")
+        @test gmsh.option.getNumber("Mesh.MshFileVersion") == 2.2
     finally
         gmsh.finalize()
     end
@@ -115,6 +151,15 @@ end
     generate(rve1; geometry_only=true, keep_open=true) do r end
     @test gmsh.isInitialized() == 1
     close_gmsh()
+end
+
+@testset "curvature-based sizes only act on small radii" begin
+    big = RVE(unitcell(), Phase(:p, [Sphere((0.5, 0.5, 0.5), 0.3)]))
+    n0 = generate(big; h=0.1, mesh=MeshOptions(curvature=0)).stats.nelements
+    n6 = generate(big; h=0.1).stats.nelements
+    @test n6 == n0
+    small = RVE(unitcell(), Phase(:p, [Sphere((0.5, 0.5, 0.5), 0.04)]))
+    @test generate(small; h=0.1).stats.hmin < 0.05
 end
 
 @testset "known limitation: refinement close to a periodic face" begin

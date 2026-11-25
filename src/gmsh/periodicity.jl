@@ -40,11 +40,53 @@ function set_periodicity!(rve::RVE{D}, frame::Frame{D}, on=_boundary_entities(rv
             try
                 gmsh.model.mesh.setPeriodic(D - 1, [s], [m], _translation(d, ext[d]))
             catch e
+                e isa ErrorException || rethrow()
                 throw(PeriodicityError(d, "Gmsh could not match the boundaries of entity $m on " *
                                           "$(_face_name(d, 1)) and entity $s on $(_face_name(d, 2)) " *
                                           "($(sprint(showerror, e))); this usually means an inclusion " *
                                           "tangent to a face from inside the cell"))
             end
+        end
+    end
+    return nothing
+end
+
+"""
+    _physical_periodic_affine!(path, frame)
+
+The periodic links of a `.msh` file store the affine map between master and slave entities,
+and Gmsh applies it to the slave nodes when the file is read. The model is meshed in the
+normalised frame, so the stored maps are in frame units: rewrite them in physical units,
+`A_phys = T A T⁻¹` with `T(x) = origin + scale x`.
+"""
+function _physical_periodic_affine!(path::AbstractString, frame::Frame)
+    _isidentity(frame) && return nothing
+    endswith(lowercase(path), ".msh") || return nothing
+    lines = readlines(path)
+    i = findfirst(==("\$Periodic"), lines)
+    i === nothing && return nothing
+    s = frame.scale
+    o = collect(_lift3(frame.origin))
+    T = [s 0 0 o[1]; 0 s 0 o[2]; 0 0 s o[3]; 0 0 0 1]
+    Ti = [1/s 0 0 -o[1]/s; 0 1/s 0 -o[2]/s; 0 0 1/s -o[3]/s; 0 0 0 1]
+    n = parse(Int, lines[i+1])
+    j = i + 2
+    for _ in 1:n
+        j += 1                                   # entityDim entityTag entityTagMaster
+        f = split(lines[j])
+        na = parse(Int, f[1])
+        if na == 16
+            A = permutedims(reshape(parse.(Float64, f[2:17]), 4, 4))
+            B = T * A * Ti
+            lines[j] = "16 " * join((repr(x) for x in vec(permutedims(B))), " ")
+        end
+        j += 1
+        np = parse(Int, lines[j])
+        j += np + 1
+    end
+    open(path, "w") do io
+        for l in lines
+            println(io, l)
         end
     end
     return nothing
@@ -89,6 +131,9 @@ function verify_periodicity(rve::RVE{D}, frame::Frame{D}) where {D}
             maxerr = max(maxerr, best)
             best <= tol || (ok = false)
         end
+        # with a matrix the cell faces always exist: finding no nodes means they were not
+        # recognised, which must not pass silently
+        rve.matrix !== nothing && size(pmin, 2) == 0 && (ok = false)
         push!(checks, PeriodicityCheck(d, size(pmin, 2), maxerr / lref, ok))
         ok || throw(PeriodicityError(d, "the meshes of $(_face_name(d, 1)) and $(_face_name(d, 2)) do not " *
                                         "match ($(size(pmin, 2)) vs $(size(pmax, 2)) nodes, max mismatch " *

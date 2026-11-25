@@ -44,7 +44,7 @@ function RVE(cell::Cell{D}, phases; matrix=:matrix, tiling=1, overlaps=:paint) w
             throw(ArgumentError("phase $(p.name): an unbounded geometry must be invariant along a cell " *
                                 "axis (e.g. a Fibre parallel to x, y or z, possibly cut by other fibres " *
                                 "parallel to it) to be a phase item. Pass crossing fibres as separate " *
-                                "items, or clip the geometry with Intersect(..., Box(...))"))
+                                "items, or clip the geometry with Intersect(..., Box(...)) using a box larger than the cell"))
         end
         _warn_long_cylinder(cell, p, g)
     end
