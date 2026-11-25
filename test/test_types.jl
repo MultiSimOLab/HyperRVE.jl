@@ -62,7 +62,6 @@ end
     @test_throws ArgumentError RVE(c, Phase(:f, Fibre((0.5, 0.5, 0.5), (1, 1, 0), 0.1)))
     cross = Fuse(Fibre((0.5, 0.5, 0.5), (1, 0, 0), 0.1), Fibre((0.5, 0.5, 0.5), (0, 1, 0), 0.1))
     @test_throws ArgumentError RVE(c, Phase(:f, cross))
-    # not implemented yet in this version
     @test RVE(c, Phase(:a, s); tiling=2).tiling == (2, 2, 2)
     @test supercell(RVE(c, Phase(:a, s); tiling=(1, 2, 1)), (3, 1, 2)).tiling == (3, 2, 2)
     @test supercell(RVE(c, Phase(:a, s)), 2).matrix == "matrix"

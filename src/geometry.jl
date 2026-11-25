@@ -218,9 +218,10 @@ end
 Intersect(parts::Geometry...) = (v = _geometry_vector(parts, "Intersect"); Intersect{_dim(v[1])}(v))
 Intersect(parts::AbstractVector) = (v = _geometry_vector(parts, "Intersect"); Intersect{_dim(v[1])}(v))
 
-Base.union(a::Geometry{D}, b::Geometry{D}, c::Geometry{D}...) where {D} = Fuse(a, b, c...)
-Base.intersect(a::Geometry{D}, b::Geometry{D}, c::Geometry{D}...) where {D} = Intersect(a, b, c...)
-Base.setdiff(a::Geometry{D}, b::Geometry{D}) where {D} = Cut(a, b)
+# untyped in D so that mixing 2D and 3D gives the ArgumentError of the constructors
+Base.union(a::Geometry, b::Geometry, c::Geometry...) = Fuse(a, b, c...)
+Base.intersect(a::Geometry, b::Geometry, c::Geometry...) = Intersect(a, b, c...)
+Base.setdiff(a::Geometry, b::Geometry) = Cut(a, b)
 
 # ----------------------------------------------------------------------------- transforms
 
@@ -237,9 +238,16 @@ Translate(g::Geometry{D}, shift) where {D} = Translate{D}(g, _vec(Val(D), shift,
 """
     Rotate(geometry; angle, axis = (0, 0, 1), center = refpoint(geometry))
 
-Rotation by `angle` (radians) about the axis through `center`. By default a geometry rotates
-about its own reference point: the centre of a sphere, ellipsoid or box, the mid-point of a
-cylinder axis, the point of a fibre, the first part of a boolean. In 2D the axis is always `z`.
+Rotation by `angle` (radians, right-handed about `axis`) about the axis through `center`. By
+default a geometry rotates about its own reference point: the centre of a sphere, ellipsoid,
+disk or box, the mid-point of a cylinder axis, the point of a fibre, the first part of a
+boolean. In 2D the rotation is about `z` (counter-clockwise for positive angles); `axis` may
+only be `(0, 0, ±1)` there.
+
+```julia
+Rotate(Ellipsoid((0.5, 0.5, 0.5), (0.3, 0.1, 0.1)); axis = (1, 1, 0), angle = π/4)
+Rotate(Ellipse((0.5, 0.5), (0.3, 0.1)); angle = π/6)                # 2D
+```
 """
 struct Rotate{D} <: Geometry{D}
     child::Geometry{D}
@@ -251,8 +259,15 @@ struct Rotate{D} <: Geometry{D}
 end
 function Rotate(g::Geometry{D}; angle, axis=(0, 0, 1), center=refpoint(g)) where {D}
     angle isa Real && isfinite(angle) || throw(ArgumentError("Rotate: angle must be a finite number"))
-    ax = D == 2 ? (0.0, 0.0, 1.0) : _normalize(_vec(Val(3), axis, "Rotate axis"), "Rotate axis")
-    return Rotate{D}(g, ax, Float64(angle), _vec(Val(D), center, "Rotate center"))
+    ax = _normalize(_vec(Val(3), axis, "Rotate axis"), "Rotate axis")
+    θ = Float64(angle)
+    if D == 2
+        abs(abs(ax[3]) - 1) < _AXIS_TOL ||
+            throw(ArgumentError("Rotate: in 2D the axis must be (0, 0, ±1), got $axis"))
+        θ = ax[3] > 0 ? θ : -θ
+        ax = (0.0, 0.0, 1.0)
+    end
+    return Rotate{D}(g, ax, θ, _vec(Val(D), center, "Rotate center"))
 end
 
 """

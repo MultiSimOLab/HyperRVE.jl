@@ -34,7 +34,14 @@ Physical groups: one per phase (dimension `D`; matrix tag 1, phase `i` tag `1 + 
 the cell boundary `xmin, xmax, ymin, ymax, zmin, zmax` (tags 1-6, closed faces, defined in
 every lower dimension), `corners` (7), `boundary` (8), `edge_<face>_<face>` (11-22, 3D only)
 and `corner_<x>_<y>[_<z>]` (31-38). In 2D the faces are the four sides of the cell (curves
-and points) and the mesh is made of triangles in the plane z = 0.
+and points) and the mesh is made of triangles in the plane z = 0. Groups without entities are
+not created: with `matrix = nothing` the cell faces exist only where the phases touch them, and
+a periodic direction without any entity on its faces is reported with 0 pairs.
+
+When a periodic mesh is read by GridapGmsh, master and slave entities are identified, so the
+labels `xmin`/`xmax` (and the `corner_*`, `edge_*` groups) of a periodic direction are shared
+between both sides and are not reliable as boundary tags; in periodic directions use
+`corners` (e.g. to fix rigid-body motions) and the phase names.
 """
 generate(rve::RVE; kwargs...) = _generate(nothing, rve; kwargs...)
 generate(f::Function, rve::RVE; kwargs...) = _generate(f, rve; kwargs...)

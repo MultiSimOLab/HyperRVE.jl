@@ -68,7 +68,7 @@ end
         @test all(c -> c.ok && c.npairs > 0, res.periodicity)
         @test brute_periodic_match_2d("xmin", "xmax", 1, 2.0)
         @test brute_periodic_match_2d("ymin", "ymax", 2, 1.0)
-        @test mesh_area() ≈ 2.0 rtol = 1e-2
+        @test mesh_area() ≈ 2.0 rtol = 1e-9          # straight outer boundary: exact
         @test res.stats.nelements > 0 && res.stats.min_quality > 0
         types, _, _ = gmsh.model.mesh.getElements(2)
         @test types == [2]                               # 3-node triangles only
@@ -109,4 +109,115 @@ end
     finally
         gmsh.finalize()
     end
+end
+
+"Bounding box (x0, y0, x1, y1) and centre of mass of the geometry of a phase (unit cell: frame = identity)."
+function phase_box(res, name)
+    ents = res[name].entities
+    b = [gmsh.model.occ.getBoundingBox(2, t) for t in ents]
+    x0 = minimum(x[1] for x in b); y0 = minimum(x[2] for x in b)
+    x1 = maximum(x[4] for x in b); y1 = maximum(x[5] for x in b)
+    m = [gmsh.model.occ.getMass(2, t) for t in ents]
+    c = reduce((a, b) -> a .+ b, (m[i] .* gmsh.model.occ.getCenterOfMass(2, ents[i]) for i in eachindex(ents))) ./ sum(m)
+    return (x0, y0, x1, y1), c
+end
+
+@testset "positions and orientations (T1, T2)" begin
+    sq = square()
+    generate(RVE(sq, [Phase(:tall, Ellipse((0.3, 0.5), (0.1, 0.3))),             # rx < ry: tall
+                      Phase(:wide, Ellipse((0.75, 0.2), (0.2, 0.05)))]); geometry_only=true) do res
+        (b, _) = phase_box(res, :tall)
+        @test b[3] - b[1] ≈ 0.2 atol = 1e-3
+        @test b[4] - b[2] ≈ 0.6 atol = 1e-3
+        (b, _) = phase_box(res, :wide)
+        @test b[3] - b[1] ≈ 0.4 atol = 1e-3
+        @test b[4] - b[2] ≈ 0.1 atol = 1e-3
+    end
+    rot = Rotate(Disk((0.7, 0.5), 0.1); angle=π / 2, center=(0.5, 0.5))           # -> (0.5, 0.7)
+    cw = Rotate(Disk((0.7, 0.5), 0.1); angle=π / 2, center=(0.5, 0.5), axis=(0, 0, -1))  # -> (0.5, 0.3)
+    tr = Translate(Disk((0.2, 0.2), 0.05), (0.3, 0.1))                            # -> (0.5, 0.3) ...
+    sc = Scale(Disk((0.65, 0.35), 0.05), 2; center=(0.5, 0.5))                     # -> (0.8, 0.2), r 0.1
+    generate(RVE(sq, [Phase(:rot, rot), Phase(:cw, cw), Phase(:tr, Translate(tr, (-0.3, 0.5))), Phase(:sc, sc)]);
+             geometry_only=true) do res
+        @test all(isapprox.(phase_box(res, :rot)[2][1:2], (0.5, 0.7); atol=1e-6))
+        @test all(isapprox.(phase_box(res, :cw)[2][1:2], (0.5, 0.3); atol=1e-6))
+        @test all(isapprox.(phase_box(res, :tr)[2][1:2], (0.2, 0.8); atol=1e-6))
+        @test all(isapprox.(phase_box(res, :sc)[2][1:2], (0.8, 0.2); atol=5e-3))   # dilation: B-spline, OCC integrals ~1e-3
+        @test volume(res, :sc) ≈ disk_area(0.1) rtol = 1e-2
+    end
+    @test_throws ArgumentError Rotate(Disk((0, 0), 1); angle=1.0, axis=(1, 0, 0))
+    @test_throws ArgumentError Disk((0, 0), 1) ∪ Sphere((0, 0, 0), 1)
+    @test_throws ArgumentError Disk((0, 0), 1) ∩ Sphere((0, 0, 0), 1)
+    @test_throws ArgumentError setdiff(Disk((0, 0), 1), Sphere((0, 0, 0), 1))
+end
+
+@testset "side and corner positions (T3)" begin
+    cell = Cell((2.0, 1.0); origin=(1.0, -1.0))
+    generate(RVE(cell, Phase(:p, Disk(cellpoint(cell, (0.5, 0.5)), 0.2))); geometry_only=true) do res
+        fr = RVEs.Frame(res.rve)
+        phys(x) = fr.origin .+ fr.scale .* x
+        g(name, dim) = only(x for x in res.groups if x.name == name && x.dim == dim)
+        for (name, d, val) in (("xmin", 1, 1.0), ("xmax", 1, 3.0), ("ymin", 2, -1.0), ("ymax", 2, 0.0))
+            for t in g(name, 1).entities
+                b = gmsh.model.getBoundingBox(1, t)
+                @test isapprox(phys((b[1], b[2]))[d], val; atol=1e-6)
+                @test isapprox(phys((b[4], b[5]))[d], val; atol=1e-6)
+            end
+        end
+        for (name, p) in (("corner_xmin_ymin", (1.0, -1.0)), ("corner_xmax_ymin", (3.0, -1.0)),
+                          ("corner_xmin_ymax", (1.0, 0.0)), ("corner_xmax_ymax", (3.0, 0.0)))
+            v = gmsh.model.getValue(0, only(g(name, 0).entities), Float64[])
+            @test all(isapprox.(phys((v[1], v[2])), p; atol=1e-9))
+        end
+    end
+end
+
+@testset "reopened 2D file (T4)" begin
+    f = joinpath(OUTDIR, "cell2d_full.msh")
+    generate(RVE(Cell((2.0, 1.0); origin=(1.0, -1.0)), Phase(:p, Disk((1.0, -1.0), 0.3))); h=0.2, output=f)
+    gmsh.initialize(String[], false)
+    try
+        gmsh.option.setNumber("General.Terminal", 0)
+        gmsh.open(f)
+        x = reshape(gmsh.model.mesh.getNodes()[2], 3, :)
+        @test all(iszero, x[3, :])
+        @test extrema(x[1, :]) == (1.0, 3.0) || all(extrema(x[1, :]) .≈ (1.0, 3.0))
+        @test all(extrema(x[2, :]) .≈ (-1.0, 0.0))
+        @test isempty(gmsh.model.mesh.getElements(3)[1])
+        names(dim) = Set(gmsh.model.getPhysicalName(d, t) for (d, t) in gmsh.model.getPhysicalGroups(dim))
+        @test names(2) == Set(["matrix", "p"])
+        @test Set(["xmin", "xmax", "ymin", "ymax", "boundary"]) ⊆ names(1)
+        @test "corner_xmax_ymax" in names(0)
+    finally
+        gmsh.finalize()
+    end
+end
+
+@testset "more 2D cases (T5-T9)" begin
+    sq = square()
+    # no matrix: porous / lattice-like
+    res = generate(RVE(sq, Phase(:solid, Disk((0.5, 0.5), 0.6)); matrix=nothing); h=0.1)
+    @test phase_names(res) == ["solid"]
+    @test all(c -> c.ok, res.periodicity)
+    # partial and no periodicity
+    part = generate(RVE(Cell((1.0, 1.0); periodic=(true, false)), Phase(:p, Disk((0.5, 0.0), 0.2))); h=0.1)
+    @test [c.direction for c in part.periodicity] == [1]
+    @test volume(part, :p) ≈ disk_area(0.2) / 2 rtol = 1e-9
+    nop = generate(RVE(Cell((1.0, 1.0); periodic=false), Phase(:p, Disk((0.5, 0.5), 0.2))); h=0.1)
+    @test isempty(nop.periodicity) && nop.stats.nelements > 0
+    # tangent disks, laminate, rectangle = cell
+    for g in (Disk((0.5, 0.5), 0.5), Rectangle((0.0, 0.0), (1.0, 0.4)), Disk((0.75, 0.5), 0.25))
+        r = generate(RVE(sq, Phase(:p, g)); h=0.1)
+        @test all(c -> c.ok && c.npairs > 0, r.periodicity)
+    end
+    full = @test_logs (:warn, r"matrix") generate(RVE(sq, Phase(:p, Rectangle((0, 0), (1, 1)))); h=0.2)
+    @test volume_fraction(full, :p) ≈ 1
+    # refinement and curvature act in 2D
+    base = generate(RVE(sq, Phase(:p, Disk((0.5, 0.5), 0.2))); h=0.1).stats.nelements
+    @test generate(RVE(sq, Phase(:p, Disk((0.5, 0.5), 0.2); refine=InterfaceRefinement(level=3))); h=0.1).stats.nelements > 2base
+    @test generate(RVE(sq, Phase(:p, Disk((0.5, 0.5), 0.02))); h=0.1).stats.hmin < 0.03
+    # booleans and overlaps in 2D
+    @test volume(geo(RVE(sq, Phase(:p, Fuse(Disk((0.4, 0.5), 0.1), Disk((0.6, 0.5), 0.1))))), :p) ≈ 2 * disk_area(0.1) rtol = 1e-9
+    @test volume(geo(RVE(sq, Phase(:p, Intersect(Rectangle((0, 0), (0.5, 1)), Disk((0.5, 0.5), 0.2))))), :p) ≈ disk_area(0.2) / 2 rtol = 1e-9
+    @test_throws ErrorException geo(RVE(sq, [Phase(:a, Disk((0.5, 0.5), 0.2)), Phase(:b, Disk((0.6, 0.5), 0.2))]; overlaps=:error))
 end

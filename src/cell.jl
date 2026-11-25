@@ -9,6 +9,7 @@ Lengths are unit-agnostic: they are written to the mesh exactly as given.
 ```julia
 Cell((1.0, 1.0, 1.0))                                  # periodic unit cube at the origin
 Cell((2.0, 1.0, 0.5); origin = (10, 0, 0), periodic = (true, true, false))
+Cell((1.0, sqrt(3.0)))                                 # 2D cell
 ```
 """
 struct Cell{D}
