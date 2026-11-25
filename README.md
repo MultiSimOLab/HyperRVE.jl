@@ -5,21 +5,16 @@
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://multisimolab.github.io/RVEs.jl/dev/)
 [![Build Status](https://github.com/MultiSimOLab/RVEs.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/MultiSimOLab/RVEs.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
-# Modelling of periodic RVEs using GMSH
+# Periodic RVE meshes with Gmsh
 
-**Gmsh:**
-Gmsh stands as an open-source 3D finite element mesh generator equipped with an integrated CAD engine and post-processor. It's designed for speed, efficiency, and user-friendliness, featuring parametric input and adaptable visualization capabilities. The software architecture revolves around four core modules: geometry, mesh, solver, and post-processing. These modules offer flexible control options, including a graphical interface, command-line interface, dedicated .geo files, and support for APIs in C++, C, Python, Julia, and Fortran.
-
-**RVEs Package:**
-The RVEs package serves as a versatile tool for mesh generation, leveraging the Gmsh-Julia-API for seamless integration. It provides a robust framework for automating mesh generation for custom model types, enabling users to automate the creation of intricate structures such as representative volume elements (RVEs). RVEs simplifies the mesh modeling process into several key stages:
-
-1. **Geometry Setup:** Define geometric shapes using fundamental entities and boolean operations.
-2. **Integration with Gmsh:** Incorporate shapes into Gmsh, execute boolean operations, and define physical groups.
-3. **Mesh Generation:** Generate meshes with customizable refinement fields.
-4. **Export and Visualization:** Export meshes into various formats and visualize the results.
-
-**Current Focus and Future Expansion:**
-At present, RVEs excels in automating the generation of representative volume elements containing multiple inclusion objects. However, its capabilities can be extended by adding support for additional geometric shapes and model types. It's essential to clarify that RVEs does not aim to replace the Gmsh scripting language. Instead, it acts as a facilitator, simplifying the automation of complex meshing tasks within a user-friendly programming environment such as Julia.
+RVEs.jl generates periodic meshes of representative volume elements (RVEs) for
+computational homogenisation, using the Gmsh Julia API and its OpenCASCADE kernel.
+A cell of any size and origin is filled with named phases built from primitives (spheres,
+ellipsoids, boxes, cylinders, fibres), boolean operations and transforms. RVEs.jl creates
+the periodic images of every inclusion that crosses the cell boundary, assigns each piece to
+its phase, defines physical groups for phases, faces, edges and corners, imposes periodic
+meshing on opposite faces and checks it node by node. The meshes are written in MSH 4.1 and
+can be read directly with GridapGmsh.
 
 # MiniApps included  
 
@@ -66,8 +61,10 @@ res = generate(rve; h = 0.1, output = "RVE.msh")
 ```
 
 `generate` opens and closes Gmsh by itself and returns plain Julia data (phase volumes and
-fractions, physical groups, mesh statistics, periodicity checks). Every mesh written is
-periodic node by node on opposite faces and carries the physical groups
+fractions, physical groups, mesh statistics, periodicity checks). Opposite faces of periodic
+directions are meshed identically (`gmsh.model.mesh.setPeriodic`, MSH 4.1 periodic links,
+verified node by node unless `check_periodicity = false`), and the mesh carries the physical
+groups
 
 | name | dimensions | content |
 |------|-----------|---------|

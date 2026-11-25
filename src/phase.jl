@@ -28,8 +28,10 @@ InterfaceRefinement(; h=nothing, level=1.0, distmin=nothing, distmax=nothing) =
     Phase(name, geometry; refine = nothing)
 
 A named material phase. `geometry` is one [`Geometry`](@ref) or a collection of them (the
-items of the phase; they are not fused). Each item crossing a periodic face of the cell is
-completed with its periodic images. `refine` is an [`InterfaceRefinement`](@ref) or `nothing`
+items of the phase). Items are not fused: where items of the same phase overlap (or overlap
+their own periodic images) the mesh keeps the internal surfaces, which all belong to the
+phase. Use [`Fuse`](@ref) to obtain one body. Each item crossing a periodic face of the cell
+is completed with its periodic images. `refine` is an [`InterfaceRefinement`](@ref) or `nothing`
 (uniform global size).
 """
 struct Phase{D}

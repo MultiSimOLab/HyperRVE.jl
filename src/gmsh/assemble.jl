@@ -13,15 +13,17 @@ end
     _shift_range(a, b, ℓ, n, periodic, invariant, tol)
 
 Lattice shifts `k` (cell lengths `ℓ`) for which the interval `[a, b]` (relative to the
-domain origin) overlaps the domain `[0, n ℓ]`. Without periodicity nothing wraps around and
-only the `n` tiling copies are considered.
+domain origin) overlaps or touches the domain `[0, n ℓ]`. Copies that only touch the domain
+are kept on purpose: their footprint is imprinted on the face, so that a body flush with a
+periodic face leaves the same imprint on the opposite face. Without periodicity nothing wraps
+around and only the `n` tiling copies are considered.
 """
 function _shift_range(a, b, ℓ, n, periodic, invariant, tol)
     invariant && return 0:0
-    overlaps(k) = (a + k * ℓ < n * ℓ - tol) && (b + k * ℓ > tol)
+    overlaps(k) = (a + k * ℓ < n * ℓ + tol) && (b + k * ℓ > -tol)
     if periodic
-        kmin = floor(Int, (tol - b) / ℓ)
-        kmax = ceil(Int, (n * ℓ - tol - a) / ℓ)
+        kmin = floor(Int, (-tol - b) / ℓ)
+        kmax = ceil(Int, (n * ℓ + tol - a) / ℓ)
         return filter(overlaps, kmin:kmax)
     else
         return filter(overlaps, 0:n-1)
@@ -63,6 +65,9 @@ function assemble!(rve::RVE{D}, frame::Frame{D}) where {D}
             occ.remove(tags, true)
             continue
         end
+        # note: copies of an item much larger than the cell overlap each other and make the
+        # global fragment slow (minutes for a radius of 1.5 cells); clipping or fusing the
+        # copies first was tried and is either fragile or slower
         has_zero = false
         for k in shifts
             if all(==(0), k)
@@ -136,7 +141,12 @@ function assemble!(rve::RVE{D}, frame::Frame{D}) where {D}
         push!(ents, sort([t for (t, p) in piece_phase if p == ip]))
     end
     for (name, e) in zip(names, ents)
-        isempty(e) && @warn "phase $name has no volume inside the cell (covered by later phases or outside)"
+        isempty(e) || continue
+        if name == rve.matrix
+            @warn "the matrix $name has no volume (the phases fill the cell); consider matrix = nothing"
+        else
+            @warn "phase $name has no volume inside the cell (covered by later phases or outside)"
+        end
     end
     return Partition(D, names, ptags, ents, piece_item)
 end

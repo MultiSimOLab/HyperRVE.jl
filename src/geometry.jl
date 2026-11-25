@@ -163,8 +163,8 @@ end
 Intersect(parts::Geometry...) = (v = _geometry_vector(parts, "Intersect"); Intersect{_dim(v[1])}(v))
 Intersect(parts::AbstractVector) = (v = _geometry_vector(parts, "Intersect"); Intersect{_dim(v[1])}(v))
 
-Base.union(a::Geometry{D}, b::Geometry{D}) where {D} = Fuse(a, b)
-Base.intersect(a::Geometry{D}, b::Geometry{D}) where {D} = Intersect(a, b)
+Base.union(a::Geometry{D}, b::Geometry{D}, c::Geometry{D}...) where {D} = Fuse(a, b, c...)
+Base.intersect(a::Geometry{D}, b::Geometry{D}, c::Geometry{D}...) where {D} = Intersect(a, b, c...)
 Base.setdiff(a::Geometry{D}, b::Geometry{D}) where {D} = Cut(a, b)
 
 # ----------------------------------------------------------------------------- transforms
@@ -183,8 +183,8 @@ Translate(g::Geometry{D}, shift) where {D} = Translate{D}(g, _vec(Val(D), shift,
     Rotate(geometry; angle, axis = (0, 0, 1), center = refpoint(geometry))
 
 Rotation by `angle` (radians) about the axis through `center`. By default a geometry rotates
-about its own reference point (the centre of a sphere, ellipsoid or box, the mid-point of a
-cylinder axis). In 2D the axis is always `z`.
+about its own reference point: the centre of a sphere, ellipsoid or box, the mid-point of a
+cylinder axis, the point of a fibre, the first part of a boolean. In 2D the axis is always `z`.
 """
 struct Rotate{D} <: Geometry{D}
     child::Geometry{D}
@@ -203,7 +203,8 @@ end
 """
     Scale(geometry, factors; center = refpoint(geometry))
 
-Scaling by a number or by one factor per direction about `center`.
+Scaling by a number or by one factor per direction about `center` (by default the reference
+point of the geometry, see [`Rotate`](@ref)).
 """
 struct Scale{D} <: Geometry{D}
     child::Geometry{D}

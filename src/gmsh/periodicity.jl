@@ -6,9 +6,8 @@ function _translation(d, L)
     return T
 end
 
-function set_periodicity!(rve::RVE{D}, frame::Frame{D}) where {D}
+function set_periodicity!(rve::RVE{D}, frame::Frame{D}, on=_boundary_entities(rve, frame)) where {D}
     any(rve.cell.periodic) || return nothing
-    on = _boundary_entities(rve, frame)
     tol = geomtol(frame)
     ext = to_frame_length.(Ref(frame), domain_size(rve))
     for d in 1:D
@@ -38,7 +37,14 @@ function set_periodicity!(rve::RVE{D}, frame::Frame{D}) where {D}
                                           "tangent to a face"))
             s = only(cands)
             push!(used, s)
-            gmsh.model.mesh.setPeriodic(D - 1, [s], [m], _translation(d, ext[d]))
+            try
+                gmsh.model.mesh.setPeriodic(D - 1, [s], [m], _translation(d, ext[d]))
+            catch e
+                throw(PeriodicityError(d, "Gmsh could not match the boundaries of entity $m on " *
+                                          "$(_face_name(d, 1)) and entity $s on $(_face_name(d, 2)) " *
+                                          "($(sprint(showerror, e))); this usually means an inclusion " *
+                                          "tangent to a face from inside the cell"))
+            end
         end
     end
     return nothing

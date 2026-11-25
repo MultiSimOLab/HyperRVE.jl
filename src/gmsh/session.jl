@@ -5,25 +5,51 @@ _gmsh_isopen() = Bool(gmsh.isInitialized())
 
 _nopopup() = "-nopopup" in ARGS || get(ENV, "RVES_NOPOPUP", "") == "1"
 
+# Options changed by `generate`; restored afterwards when the session belongs to the caller.
+const _SESSION_OPTIONS = ("General.Terminal", "Geometry.OCCBoundsUseStl", "Mesh.MeshSizeExtendFromBoundary",
+                          "Mesh.MeshSizeFromPoints", "Mesh.MeshSizeFromCurvature",
+                          "Mesh.MshFileVersion", "Mesh.SaveAll")
+
+function _unique_model_name(name)
+    names = gmsh.model.list()
+    name in names || return String(name)
+    k = 2
+    while "$(name)_$k" in names
+        k += 1
+    end
+    return "$(name)_$k"
+end
+
 function _with_session(f, name::AbstractString; keep_open::Bool, verbosity::Int)
     owned = !_gmsh_isopen()
-    owned && gmsh.initialize()
+    # user configuration files (~/.gmshrc, ~/.gmsh-options) are not read: results must not
+    # depend on them (they can, e.g., switch the output to MSH 2.2)
+    owned && gmsh.initialize(String[], false)
+    saved = owned ? nothing : [(o, gmsh.option.getNumber(o)) for o in _SESSION_OPTIONS]
+    model = owned ? String(name) : _unique_model_name(name)
     ok = false
     try
         gmsh.option.setNumber("General.Terminal", verbosity >= 2 ? 1 : 0)
-        gmsh.model.add(name)
-        r = f()
+        gmsh.option.setNumber("Geometry.OCCBoundsUseStl", 0)
+        gmsh.option.setNumber("Mesh.MshFileVersion", 4.1)
+        gmsh.option.setNumber("Mesh.SaveAll", 0)
+        gmsh.model.add(model)
+        r = f(model)
         ok = true
         return r
     catch
-        if !owned && _gmsh_isopen() && name in gmsh.model.list()
-            gmsh.model.setCurrent(name)
+        if !owned && _gmsh_isopen() && model in gmsh.model.list()
+            gmsh.model.setCurrent(model)
             gmsh.model.remove()
         end
         rethrow()
     finally
         if owned && !(keep_open && ok) && _gmsh_isopen()
             gmsh.finalize()
+        elseif saved !== nothing && _gmsh_isopen()
+            for (o, v) in saved
+                gmsh.option.setNumber(o, v)
+            end
         end
     end
 end

@@ -8,6 +8,9 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, opts::MeshOptions)
     f.setString(bg, "F", string(h))
     push!(fields, bg)
     listname = D == 3 ? "SurfacesList" : "CurvesList"
+    # one Distance + Threshold per distinct (size, distmin, distmax): items with the same
+    # characteristic length share a field
+    groups = Dict{NTuple{3,Float64},Vector{Int}}()
     for (ip, ph) in enumerate(rve.phases)
         ref = ph.refine
         ref === nothing && continue
@@ -21,24 +24,27 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, opts::MeshOptions)
             hint = ref.h === nothing ? 2π * ℓ / (15 * ref.level) : to_frame_length(frame, ref.h)
             dmin = ref.distmin === nothing ? ℓ / 5 : to_frame_length(frame, ref.distmin)
             dmax = ref.distmax === nothing ? ℓ / 2.5 : to_frame_length(frame, ref.distmax)
-            dist = f.add("Distance")
-            f.setNumbers(dist, listname, surfs)
-            f.setNumber(dist, "Sampling", 100)
-            thr = f.add("Threshold")
-            f.setNumber(thr, "InField", dist)
-            f.setNumber(thr, "SizeMin", min(hint, h))
-            f.setNumber(thr, "SizeMax", h)
-            f.setNumber(thr, "DistMin", dmin)
-            f.setNumber(thr, "DistMax", max(dmax, dmin * (1 + 1e-9)))
-            push!(fields, thr)
+            append!(get!(groups, (hint, dmin, dmax), Int[]), surfs)
         end
+    end
+    for ((hint, dmin, dmax), surfs) in groups
+        dist = f.add("Distance")
+        f.setNumbers(dist, listname, unique(surfs))
+        f.setNumber(dist, "Sampling", 100)
+        thr = f.add("Threshold")
+        f.setNumber(thr, "InField", dist)
+        f.setNumber(thr, "SizeMin", min(hint, h))
+        f.setNumber(thr, "SizeMax", h)
+        f.setNumber(thr, "DistMin", dmin)
+        f.setNumber(thr, "DistMax", max(dmax, dmin * (1 + 1e-9)))
+        push!(fields, thr)
     end
     fmin = f.add("Min")
     f.setNumbers(fmin, "FieldsList", fields)
     f.setAsBackgroundMesh(fmin)
     gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
     gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
-    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", opts.curvature)
     gmsh.model.mesh.generate(D)
     return nothing
 end

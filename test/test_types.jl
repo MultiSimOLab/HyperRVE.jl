@@ -20,6 +20,8 @@ using RVEs: refpoint, characteristic_length, isunbounded, invariant_axis, _shift
     @test Fuse(s, s) isa Fuse{3}
     @test Fuse([s, s]).parts == Fuse(s, s).parts
     @test s ∪ s isa Fuse{3}
+    @test union(s, s, s) isa Fuse{3} && length(union(s, s, s).parts) == 3
+    @test length(intersect(s, s, s).parts) == 3
     @test s ∩ s isa Intersect{3}
     @test setdiff(s, s) isa Cut{3}
     @test Scale(s, 2).factors == (2.0, 2.0, 2.0)
@@ -64,6 +66,8 @@ end
     @test_throws ArgumentError RVE(Cell((1.0, 1.0)), Phase(:a, s))
     @test_throws ArgumentError RVE(c, Phase(:a, s); tiling=2)
     @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); mesh=MeshOptions(order=2))
+    @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); mesh=MeshOptions(optimize=false))
+    @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); output=joinpath(OUTDIR, "nodir", "x.msh"))
     @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); h=0.1, mesh=MeshOptions(h=0.2))
     @test_logs (:warn, r"Fibre") RVE(c, Phase(:a, Cylinder((-0.1, 0.5, 0.5), (2, 0, 0), 0.1)))
 end
@@ -99,7 +103,8 @@ end
     @test _shift_range(0.8, 1.2, 1.0, 1, true, false, t) == [-1, 0]        # crosses max
     @test _shift_range(-0.1, 1.1, 1.0, 1, true, false, t) == [-1, 0, 1]    # larger than cell
     @test _shift_range(-0.8, 1.8, 1.0, 1, true, false, t) == [-1, 0, 1]
-    @test _shift_range(0.6, 1.0, 1.0, 1, true, false, t) == [0]            # tangent: no image
+    @test _shift_range(0.6, 1.0, 1.0, 1, true, false, t) == [-1, 0]        # flush: image imprints xmin
+    @test _shift_range(0.0, 0.4, 1.0, 1, true, false, t) == [0, 1]
     @test _shift_range(-0.2, 0.2, 1.0, 1, false, false, t) == [0]          # non-periodic
     @test _shift_range(1.2, 1.4, 1.0, 1, false, false, t) == Int[]         # outside
     @test _shift_range(-0.2, 0.2, 1.0, 1, true, true, t) == 0:0            # invariant

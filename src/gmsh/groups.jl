@@ -36,12 +36,12 @@ function _add_group!(groups, dim, ents, tag, name)
     push!(groups, GroupInfo(name, dim, tag, e))
 end
 
-function add_physical_groups!(rve::RVE{D}, frame::Frame{D}, part::Partition) where {D}
+function add_physical_groups!(rve::RVE{D}, frame::Frame{D}, part::Partition,
+                              on=_boundary_entities(rve, frame)) where {D}
     groups = GroupInfo[]
     for (name, tag, e) in zip(part.names, part.tags, part.entities)
         _add_group!(groups, D, e, tag, name)
     end
-    on = _boundary_entities(rve, frame)
     sel(dim, pred) = [t for ((d, t), ps) in on if d == dim && pred(ps)]
     # closed faces, in every lower dimension
     for d in 1:D, s in 1:2, dim in D-1:-1:0

@@ -41,9 +41,10 @@ function RVE(cell::Cell{D}, phases; matrix=:matrix, tiling=1, overlaps=:paint) w
     overlaps in (:paint, :error) || throw(ArgumentError("overlaps must be :paint or :error, got $(repr(overlaps))"))
     for p in ps, g in p.items
         if isunbounded(g) && invariant_axis(g) == 0
-            throw(ArgumentError("phase $(p.name): an unbounded geometry that is not aligned with a cell " *
-                                "axis cannot be a phase item; clip it with Intersect(..., Box(...)) or pass " *
-                                "each Fibre as a separate item"))
+            throw(ArgumentError("phase $(p.name): an unbounded geometry must be invariant along a cell " *
+                                "axis (e.g. a Fibre parallel to x, y or z, possibly cut by other fibres " *
+                                "parallel to it) to be a phase item. Pass crossing fibres as separate " *
+                                "items, or clip the geometry with Intersect(..., Box(...))"))
         end
         _warn_long_cylinder(cell, p, g)
     end
