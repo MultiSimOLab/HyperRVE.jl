@@ -1,23 +1,19 @@
-using MimosaRVEs
+using RVEs
 using Documenter
 
-DocMeta.setdocmeta!(MimosaRVEs, :DocTestSetup, :(using MimosaRVEs); recursive=true)
+DocMeta.setdocmeta!(RVEs, :DocTestSetup, :(using RVEs); recursive=true)
 
 makedocs(;
-    modules=[MimosaRVEs],
-    authors="MultiSimo_Group",
-    sitename="MimosaRVEs.jl",
+    modules=[RVEs],
+    authors="MultiSimO Lab",
+    sitename="RVEs.jl",
     format=Documenter.HTML(;
-        canonical="https://jmartfrut.github.io/MimosaRVEs.jl",
+        canonical="https://multisimolab.github.io/RVEs.jl",
         edit_link="main",
         assets=String[],
     ),
-    pages=[
-        "Home" => "index.md",
-    ],
+    pages=["Home" => "index.md"],
+    warnonly=[:missing_docs],
 )
 
-deploydocs(;
-    repo="github.com/jmartfrut/MimosaRVEs.jl",
-    devbranch="main",
-)
+deploydocs(; repo="github.com/MultiSimOLab/RVEs.jl", devbranch="main")
