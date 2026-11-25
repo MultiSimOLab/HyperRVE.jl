@@ -61,7 +61,7 @@ normalised frame, so the stored maps are in frame units: rewrite them in physica
 """
 function _physical_periodic_affine!(path::AbstractString, frame::Frame)
     _isidentity(frame) && return nothing
-    endswith(lowercase(path), ".msh") || return nothing
+    any(e -> endswith(lowercase(path), e), (".msh", ".msh4")) || return nothing
     lines = readlines(path)
     i = findfirst(==("\$Periodic"), lines)
     i === nothing && return nothing
@@ -79,6 +79,8 @@ function _physical_periodic_affine!(path::AbstractString, frame::Frame)
             A = permutedims(reshape(parse.(Float64, f[2:17]), 4, 4))
             B = T * A * Ti
             lines[j] = "16 " * join((repr(x) for x in vec(permutedims(B))), " ")
+        elseif na != 0
+            @warn "unexpected periodic affine map with $na values in $path; left unchanged"
         end
         j += 1
         np = parse(Int, lines[j])

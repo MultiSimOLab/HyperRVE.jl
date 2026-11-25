@@ -21,7 +21,10 @@ periodicity and mesh it. Gmsh is initialised and finalised automatically; the re
 - `name`: name of the Gmsh model (made unique if a model with that name is already open).
 
 The do-block form runs `f(res)` while the Gmsh model is alive, then closes Gmsh (unless
-`keep_open = true`); it returns `res`, not the value of `f`.
+`keep_open = true`); it returns `res`, not the value of `f`. In the live model the mesh is in
+physical coordinates but the CAD entities are in a normalised frame (domain origin at 0,
+longest edge 1): use [`write_mesh`](@ref), not `gmsh.write`, to export it. Each call adds a
+new Gmsh model to an open session (names made unique); call [`close_gmsh`](@ref) to free them.
 
 Gmsh is initialised without reading the user configuration files, and `.msh` files are
 written in format 4.1. If the caller already initialised Gmsh, that session is left open and
