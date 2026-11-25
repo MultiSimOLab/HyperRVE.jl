@@ -12,7 +12,7 @@ makedocs(;
         edit_link="main",
         assets=String[],
     ),
-    pages=["Home" => "index.md"],
+    pages=["Home" => "index.md", "Migration from v1" => "migration.md"],
     warnonly=[:missing_docs],
 )
 

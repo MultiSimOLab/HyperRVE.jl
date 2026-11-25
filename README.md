@@ -1,4 +1,4 @@
-# RVEs :construction: :construction: :construction: **Work in progress** :construction: :construction: :construction:
+# RVEs.jl
 
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://multisimolab.github.io/RVEs.jl/stable/)
@@ -39,57 +39,46 @@ src="https://github.com/MultiSimOLab/RVEs.jl/blob/main/docs/imgs/rves.png" width
 ```julia
 using RVEs
 
-startGmsh()
+cell = Cell((1.0, 1.0, 1.0))                     # periodic unit cube (any size and origin work)
 
-myRVE = RVE( [1.0, 1.0, 1.0], [1,1,1], [0.0, 0.0, 0.0], 0.1)
+# body-centred cubic arrangement: the corner sphere is completed by its periodic images
+spheres = [Sphere((0.5, 0.5, 0.5), 0.25), Sphere((0.0, 0.0, 0.0), 0.25)]
+rve = RVE(cell, Phase(:particles, spheres; refine = InterfaceRefinement(level = 2)))
 
-myInclusions = (Sphere([0.0, 0.5, 0.5], 0.25, 2),
-Sphere([0.5, 0.0, 0.5], 0.25, 2),
-Sphere([0.5, 0.5, 0.0], 0.25, 2),
-Sphere([1.0, 1.0, 1.0], 0.25, 2))
-
-model, tagvol=createGmshModel(myRVE,myInclusions,"RVE")
-
-createMesh!(model,myRVE,myInclusions,tagvol)
-
-output_file = joinpath(dirname(@__FILE__), "RVE.msh")
-saveMesh(output_file)
-
-stopGmsh()
+res = generate(rve; h = 0.1, output = "bcc.msh")
+volume_fraction(res, :particles)                 # 2 · 4π/3 · 0.25³ ≈ 0.131
 ```
 
-
+Inclusions built with boolean operations and fibres crossing the whole cell:
 
 ```julia
 using RVEs
 
-startGmsh()
+cell  = Cell((1.0, 1.0, 1.0))
+c     = cellpoint(cell, (0.5, 0.5, 0.5))         # fractional -> physical coordinates
+L     = 0.38
+cross = Fuse(Fibre(c, (1, 0, 0), 0.1), Fibre(c, (0, 1, 0), 0.1), Fibre(c, (0, 0, 1), 0.1))
+core  = Intersect(Sphere(c, 0.25), Box(center = c, size = (L, L, L)))
 
-myRVE = RVE( [1.0, 1.0, 1.0], [1,1,1], [0.0, 0.0, 0.0], 0.1)
- 
-geo1=Cylinder([-0.1, 0.5, 0.5],[2.0,0.0,0.0], 0.1, 2)
-geo2=Cylinder([0.5, -0.1, 0.5],[0.0,2.0,0.0], 0.1, 2)
-geo3=Cylinder([0.5, 0.5,-0.1],[0.0,0.0,2.0], 0.1, 2)
-geo4=Fuse([geo1,geo2,geo3],2)
-
-geo5=Sphere([0.5, 0.5, 0.5], 0.25, 2)
-L=0.38
-geo6=Box([L, L, L], [0.5-L/2, 0.5-L/2, 0.5-L/2], 2)
-geo7=Intersect(geo5,geo6,2)
-
-geo8=Cut(geo7,geo4,2)
-myInclusions=(geo8,)
-  
-model, tagvol=createGmshModel(myRVE,myInclusions,"RVE")
-  
-createMesh!(model,myRVE,myInclusions,tagvol)
-
-output_file = joinpath(dirname(@__FILE__), "RVE.msh")
-saveMesh(output_file)
-
-stopGmsh()
+rve = RVE(cell, [Phase(:fibre, Fibre(cellpoint(cell, (0, 0.5, 0)), (1, 0, 0), 0.1)),
+                 Phase(:inclusion, Cut(core, cross); refine = InterfaceRefinement(level = 2))])
+res = generate(rve; h = 0.1, output = "RVE.msh")
 ```
 
+`generate` opens and closes Gmsh by itself and returns plain Julia data (phase volumes and
+fractions, physical groups, mesh statistics, periodicity checks). Every mesh written is
+periodic node by node on opposite faces and carries the physical groups
+
+| name | dimensions | content |
+|------|-----------|---------|
+| phase names (`matrix`, ...) | 3 | volumes of each phase |
+| `xmin`, `xmax`, `ymin`, `ymax`, `zmin`, `zmax` | 2, 1, 0 | closed cell faces (tags 1–6) |
+| `corners`, `boundary` | 0 / 2, 1, 0 | the 8 corners (7), the whole cell surface (8) |
+| `edge_ymin_zmin`, ... | 1, 0 | the 12 cell edges |
+| `corner_xmin_ymin_zmin`, ... | 0 | each corner |
+
+Version 2 is a complete rewrite; see `docs/src/migration.md` to port scripts written for the
+2024 API.
 
 # Project funded by:
 
