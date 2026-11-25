@@ -155,6 +155,7 @@ end
 
 @testset "B-spline bodies crossing periodic faces" begin
     bodies = [Ellipsoid((0.05, 0.5, 0.5), (0.2, 0.1, 0.15)),
+              Ellipsoid((0.333, 0.281, 1.0036), (0.112, 0.100, 0.089)),
               Rotate(Ellipsoid((0.5, 0.95, 0.5), (0.25, 0.1, 0.1)); axis=(1, 1, 1), angle=0.6),
               Scale(Sphere((0.5, 0.5, 0.02), 0.1), (2, 1, 1))]
     for g in bodies, m in (:matrix, nothing)

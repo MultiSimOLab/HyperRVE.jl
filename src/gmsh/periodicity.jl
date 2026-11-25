@@ -10,7 +10,7 @@ function set_periodicity!(rve::RVE{D}, frame::Frame{D}, on=_boundary_entities(rv
     any(rve.cell.periodic) || return nothing
     # pairing compares exact (padded) bounding boxes of an entity and its translate: the
     # padding is the same on both sides, but can reach ~1e-5 for B-spline cuts
-    tol = 100 * geomtol(frame)
+    tol = 1000 * geomtol(frame)
     ext = to_frame_length.(Ref(frame), domain_size(rve))
     for d in 1:D
         rve.cell.periodic[d] || continue

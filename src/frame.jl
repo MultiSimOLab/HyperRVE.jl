@@ -22,8 +22,9 @@ from_frame_measure(f::Frame{D}, v::Real, dim::Int=D) where {D} = v * f.scale^dim
 
 "Classification tolerance (frame units)."
 const GEOM_TOL = 1e-6
-"Node-matching tolerance, relative to the domain size."
-const PERIODIC_TOL = 1e-8
+"Node-matching tolerance, relative to the domain size (B-spline intersections are only
+reproducible to ~1e-8 between a face and its translate)."
+const PERIODIC_TOL = 1e-6
 
 geomtol(::Frame) = GEOM_TOL
 
