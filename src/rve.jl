@@ -11,9 +11,12 @@ given [`Phase`](@ref)s. Where phases overlap, the phase listed later wins
 (`overlaps = :paint`); `overlaps = :error` makes any overlap an error.
 
 `tiling = n` (an integer or one per direction) meshes a supercell made of `n` copies of the
-cell along each direction: the phases are given for one cell and repeated. Along periodic
-directions the supercell is periodic; along non-periodic ones the copies are simply placed
-side by side. See also [`supercell`](@ref).
+cell along each direction: the items of the phases are given for one cell and translated by
+every cell offset of the supercell. Along periodic directions the supercell is periodic.
+Along non-periodic directions nothing wraps around: an item is cut only by the outer faces of
+the supercell, so an item that sticks out of the unit cell (or lies outside it) appears,
+whole, in the neighbouring copy where it falls inside the supercell. See also
+[`supercell`](@ref).
 """
 struct RVE{D}
     cell::Cell{D}
@@ -77,7 +80,9 @@ function supercell(rve::RVE{D}, n) where {D}
     m = n isa Integer ? ntuple(_ -> Int(n), D) :
         (length(n) == D && all(x -> x isa Integer, n) ? ntuple(i -> Int(n[i]), D) :
          throw(ArgumentError("supercell: n must be an integer or $D integers")))
-    return RVE(rve.cell, rve.phases; matrix=rve.matrix, tiling=rve.tiling .* m, overlaps=rve.overlaps)
+    all(>=(1), m) || throw(ArgumentError("supercell: n must be >= 1, got $m"))
+    # the RVE was validated on construction: rebuild it directly (no repeated warnings)
+    return RVE{D}(rve.cell, rve.phases, rve.matrix, rve.tiling .* m, rve.overlaps)
 end
 
 domain_origin(rve::RVE) = rve.cell.origin
