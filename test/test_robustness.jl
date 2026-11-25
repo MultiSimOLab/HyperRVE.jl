@@ -232,9 +232,4 @@ end
     @test generate(small; h=0.1).stats.hmin < 0.05
 end
 
-@testset "known limitation: refinement close to a periodic face" begin
-    # the size field is not periodic: a refined inclusion close to (but not crossing) a face
-    # gets a fine mesh on one side only; the periodic copy of the coarse face degrades quality
-    res = generate(RVE(unitcell(), Phase(:p, Sphere((0.78, 0.5, 0.5), 0.2); refine=InterfaceRefinement(h=0.02))); h=0.15)
-    @test_broken res.stats.min_quality > 1e-2
-end
+

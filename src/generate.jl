@@ -51,8 +51,7 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
                    keep_open::Bool=false, verbosity::Integer=0, name::AbstractString="RVE") where {D}
     if h !== nothing
         mesh.h === nothing || throw(ArgumentError("give the global size either as h or as mesh.h, not both"))
-        mesh = MeshOptions(; h=_positive(h, "h"), curvature=mesh.curvature, order=mesh.order, algorithm=mesh.algorithm,
-                           optimize=mesh.optimize, recombine=mesh.recombine)
+        mesh = _with(mesh; h=_positive(h, "h"))
     end
     _check(mesh)
     files = output === nothing ? String[] :
@@ -68,6 +67,7 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
         on = _boundary_entities(rve, frame)
         groups = add_physical_groups!(rve, frame, part, on)
         set_periodicity!(rve, frame, on)
+        ifs = classify_interfaces(part, on)
         vdom = volume(rve)
         phases = PhaseInfo[]
         for (n, t, e) in zip(part.names, part.tags, part.entities)
@@ -77,13 +77,18 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
         stats = nothing
         checks = PeriodicityCheck[]
         if !geometry_only
-            mesh!(rve, frame, part, mesh)
+            mesh!(rve, frame, part, ifs, mesh)
             restore_frame!(frame)
             check_periodicity && (checks = verify_periodicity(rve, frame))
             stats = mesh_stats(frame, mesh)
             stats.nelements > 0 ||
                 error("Gmsh produced no $(D == 3 ? "tetrahedra" : "triangles"); the mesh size h may be " *
                       "too large for the smallest inclusion (try a smaller h or InterfaceRefinement)")
+            stats.min_quality < 0.02 &&
+                @warn "generate: poor element quality (minimum SICN $(round(stats.min_quality; sigdigits=2))). " *
+                      "Common causes: a thin ligament between inclusions or between an inclusion and a face " *
+                      "that is coarser than the local size; refine that phase (refine = ..., or Phase h), " *
+                      "increase the gap, or reduce h."
         end
         for p in files
             gmsh.write(p)

@@ -1,6 +1,6 @@
 const _FACE_NAMES = ("xmin", "xmax", "ymin", "ymax", "zmin", "zmax")
-_isreserved(n) = n in _FACE_NAMES || n in ("corners", "boundary") ||
-                 startswith(n, "edge_") || startswith(n, "corner_")
+_isreserved(n) = n in _FACE_NAMES || n in ("corners", "boundary", "void", "interfaces") ||
+                 startswith(n, "edge_") || startswith(n, "corner_") || startswith(n, "interface_")
 
 """
     RVE(cell, phases; matrix = :matrix, tiling = 1, overlaps = :paint)

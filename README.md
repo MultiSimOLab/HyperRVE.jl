@@ -38,7 +38,7 @@ cell = Cell((1.0, 1.0, 1.0))                     # periodic unit cube (any size 
 
 # body-centred cubic arrangement: the corner sphere is completed by its periodic images
 spheres = [Sphere((0.5, 0.5, 0.5), 0.25), Sphere((0.0, 0.0, 0.0), 0.25)]
-rve = RVE(cell, Phase(:particles, spheres; refine = InterfaceRefinement(level = 2)))
+rve = RVE(cell, Phase(:particles, spheres; refine = 0.03))   # element size 0.03 on the interfaces
 
 res = generate(rve; h = 0.1, output = "bcc.msh")
 volume_fraction(res, :particles)                 # 2 · 4π/3 · 0.25³ ≈ 0.131
@@ -56,7 +56,7 @@ cross = Fuse(Fibre(c, (1, 0, 0), 0.1), Fibre(c, (0, 1, 0), 0.1), Fibre(c, (0, 0,
 core  = Intersect(Sphere(c, 0.25), Box(center = c, size = (L, L, L)))
 
 rve = RVE(cell, [Phase(:fibre, Fibre(cellpoint(cell, (0, 0.5, 0)), (1, 0, 0), 0.1)),
-                 Phase(:inclusion, Cut(core, cross); refine = InterfaceRefinement(level = 2))])
+                 Phase(:inclusion, Cut(core, cross); refine = 0.03)])
 res = generate(rve; h = 0.1, output = "RVE.msh")
 ```
 
@@ -71,6 +71,11 @@ generate(rve; h = 0.05, output = "hex2d.msh")
 
 A supercell repeats a cell: for the first (3D) example above,
 `generate(supercell(rve, (3, 3, 3)); h = 0.1)`.
+
+Mesh sizes: `generate(rve; h)` sets the bulk size, `Phase(...; h = ...)` the size inside a
+phase, and `refine = 0.02` the size on the interfaces of a phase, graded with a constant ratio
+(`MeshOptions(growth = 1.3)`) back to the bulk size. The size field is periodic: refining an
+inclusion close to a face also refines the opposite face, so periodic meshes stay well shaped.
 
 `generate` opens and closes Gmsh by itself and returns plain Julia data (phase volumes and
 fractions, physical groups, mesh statistics, periodicity checks). Opposite faces of periodic

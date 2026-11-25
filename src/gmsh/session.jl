@@ -8,7 +8,8 @@ _nopopup() = "-nopopup" in ARGS || get(ENV, "RVES_NOPOPUP", "") == "1"
 # Options changed by `generate`; restored afterwards when the session belongs to the caller.
 const _SESSION_OPTIONS = ("General.Terminal", "Geometry.OCCBoundsUseStl", "Mesh.MeshSizeExtendFromBoundary",
                           "Mesh.MeshSizeFromPoints", "Mesh.MeshSizeFromCurvature",
-                          "Mesh.MshFileVersion", "Mesh.SaveAll", "Mesh.Binary")
+                          "Mesh.MshFileVersion", "Mesh.SaveAll", "Mesh.Binary", "Mesh.MeshSizeMin",
+                          "Mesh.MeshSizeMax")
 
 function _unique_model_name(name)
     names = gmsh.model.list()
