@@ -30,10 +30,11 @@ Gmsh is initialised without reading the user configuration files, and `.msh` fil
 written in format 4.1. If the caller already initialised Gmsh, that session is left open and
 the options changed by `generate` are restored on return.
 
-Physical groups: one per phase (dimension 3; matrix tag 1, phase `i` tag `1 + i`), and on the
-cell boundary `xmin, xmax, ymin, ymax, zmin, zmax` (tags 1-6, closed faces, defined in
-dimensions 2, 1 and 0), `corners` (7), `boundary` (8), `edge_<face>_<face>` (11-22) and
-`corner_<x>_<y>_<z>` (31-38).
+Physical groups: one per phase (dimension `D`; matrix tag 1, phase `i` tag `1 + i`), and on
+the cell boundary `xmin, xmax, ymin, ymax, zmin, zmax` (tags 1-6, closed faces, defined in
+every lower dimension), `corners` (7), `boundary` (8), `edge_<face>_<face>` (11-22, 3D only)
+and `corner_<x>_<y>[_<z>]` (31-38). In 2D the faces are the four sides of the cell (curves
+and points) and the mesh is made of triangles in the plane z = 0.
 """
 generate(rve::RVE; kwargs...) = _generate(nothing, rve; kwargs...)
 generate(f::Function, rve::RVE; kwargs...) = _generate(f, rve; kwargs...)

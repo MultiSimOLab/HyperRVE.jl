@@ -60,6 +60,15 @@ rve = RVE(cell, [Phase(:fibre, Fibre(cellpoint(cell, (0, 0.5, 0)), (1, 0, 0), 0.
 res = generate(rve; h = 0.1, output = "RVE.msh")
 ```
 
+Two-dimensional cells work the same way, with `Disk`, `Ellipse` and `Rectangle`:
+
+```julia
+cell = Cell((1.0, sqrt(3.0)))                    # hexagonal packing of fibres
+rve  = RVE(cell, Phase(:fibre, [Disk(cellpoint(cell, (0.5, 0.5)), 0.3),
+                                Disk(cellpoint(cell, (0.0, 0.0)), 0.3)]); matrix = :resin)
+generate(rve; h = 0.05, output = "hex2d.msh")
+```
+
 A supercell repeats the cell: `generate(supercell(rve, (3, 3, 3)); h = 0.1)`.
 
 `generate` opens and closes Gmsh by itself and returns plain Julia data (phase volumes and

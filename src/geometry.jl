@@ -5,7 +5,7 @@ Abstract type of all geometric descriptions in `D` dimensions. Geometries are im
 lazy trees: nothing is sent to Gmsh until [`generate`](@ref).
 
 Primitives: [`Sphere`](@ref), [`Ellipsoid`](@ref), [`Box`](@ref), [`Cylinder`](@ref),
-[`Fibre`](@ref). Booleans: [`Fuse`](@ref), [`Cut`](@ref), [`Intersect`](@ref) (also
+[`Fibre`](@ref) in 3D; [`Disk`](@ref), [`Ellipse`](@ref), [`Rectangle`](@ref) in 2D. Booleans: [`Fuse`](@ref), [`Cut`](@ref), [`Intersect`](@ref) (also
 `a ∪ b`, `a ∩ b`, `setdiff(a, b)`). Transforms: [`Translate`](@ref), [`Rotate`](@ref),
 [`Scale`](@ref).
 """
@@ -110,6 +110,61 @@ struct Fibre <: Geometry{3}
             _positive(radius, "Fibre radius"))
 end
 Fibre(; point, direction, radius) = Fibre(point, direction, radius)
+
+# ----------------------------------------------------------------------------- 2D primitives
+
+"""
+    Disk(center, radius)
+    Disk(; center, radius)
+
+Circular inclusion in a 2D cell.
+"""
+struct Disk <: Geometry{2}
+    center::Vec{2}
+    radius::Float64
+    Disk(center, radius) = new(_vec(Val(2), center, "Disk center"), _positive(radius, "Disk radius"))
+end
+Disk(; center, radius) = Disk(center, radius)
+
+"""
+    Ellipse(center, radii)
+    Ellipse(; center, radii)
+
+Axis-aligned ellipse with semi-axes `radii` in a 2D cell. Use [`Rotate`](@ref) to orient it.
+"""
+struct Ellipse <: Geometry{2}
+    center::Vec{2}
+    radii::Vec{2}
+    function Ellipse(center, radii)
+        r = _vec(Val(2), radii, "Ellipse radii")
+        all(>(0), r) || throw(ArgumentError("Ellipse radii must be positive, got $r"))
+        return new(_vec(Val(2), center, "Ellipse center"), r)
+    end
+end
+Ellipse(; center, radii) = Ellipse(center, radii)
+
+"""
+    Rectangle(corner, size)
+    Rectangle(; corner, size)     Rectangle(; center, size)
+
+Axis-aligned rectangle in a 2D cell, given by its minimum corner (or its centre) and sizes.
+"""
+struct Rectangle <: Geometry{2}
+    corner::Vec{2}
+    size::Vec{2}
+    function Rectangle(corner, size)
+        s = _vec(Val(2), size, "Rectangle size")
+        all(>(0), s) || throw(ArgumentError("Rectangle size must be positive, got $s"))
+        return new(_vec(Val(2), corner, "Rectangle corner"), s)
+    end
+end
+function Rectangle(; corner=nothing, center=nothing, size)
+    (corner === nothing) == (center === nothing) &&
+        throw(ArgumentError("Rectangle: give exactly one of `corner` or `center`"))
+    s = _vec(Val(2), size, "Rectangle size")
+    return corner !== nothing ? Rectangle(corner, s) :
+           Rectangle(_vec(Val(2), center, "Rectangle center") .- s ./ 2, s)
+end
 
 # ----------------------------------------------------------------------------- booleans
 
@@ -228,6 +283,8 @@ Reference point of a geometry: default centre of [`Rotate`](@ref) and [`Scale`](
 refpoint(g::Sphere) = g.center
 refpoint(g::Ellipsoid) = g.center
 refpoint(g::Box) = g.corner .+ g.size ./ 2
+refpoint(g::Union{Disk,Ellipse}) = g.center
+refpoint(g::Rectangle) = g.corner .+ g.size ./ 2
 refpoint(g::Cylinder) = g.base .+ g.axis ./ 2
 refpoint(g::Fibre) = g.point
 refpoint(g::Union{Fuse,Intersect}) = refpoint(first(g.parts))
@@ -244,6 +301,9 @@ Length scale used by the default interface refinement (radius, smallest semi-axi
 characteristic_length(g::Sphere) = g.radius
 characteristic_length(g::Ellipsoid) = minimum(g.radii)
 characteristic_length(g::Box) = minimum(g.size)
+characteristic_length(g::Disk) = g.radius
+characteristic_length(g::Ellipse) = minimum(g.radii)
+characteristic_length(g::Rectangle) = minimum(g.size)
 characteristic_length(g::Union{Cylinder,Fibre}) = g.radius
 characteristic_length(g::Union{Fuse,Intersect}) = minimum(characteristic_length, g.parts)
 characteristic_length(g::Cut) = min(characteristic_length(g.object), minimum(characteristic_length, g.tools))
