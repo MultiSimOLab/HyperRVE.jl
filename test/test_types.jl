@@ -64,7 +64,13 @@ end
     @test_throws ArgumentError RVE(c, Phase(:f, cross))
     # not implemented yet in this version
     @test_throws ArgumentError RVE(Cell((1.0, 1.0)), Phase(:a, s))
-    @test_throws ArgumentError RVE(c, Phase(:a, s); tiling=2)
+    @test RVE(c, Phase(:a, s); tiling=2).tiling == (2, 2, 2)
+    @test supercell(RVE(c, Phase(:a, s); tiling=(1, 2, 1)), (3, 1, 2)).tiling == (3, 2, 2)
+    @test supercell(RVE(c, Phase(:a, s)), 2).matrix == "matrix"
+    @test supercell(RVE(c, Phase(:a, s); matrix=nothing), 2).matrix === nothing
+    @test_throws ArgumentError supercell(RVE(c, Phase(:a, s)), (2, 2))
+    @test_throws ArgumentError supercell(RVE(c, Phase(:a, s)), 0)
+    @test occursin("tiling 2×2×2", sprint(show, supercell(RVE(c, Phase(:a, s)), 2)))
     @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); mesh=MeshOptions(order=2))
     @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); mesh=MeshOptions(optimize=false))
     @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); output=joinpath(OUTDIR, "nodir", "x.msh"))
