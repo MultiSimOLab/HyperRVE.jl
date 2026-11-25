@@ -49,3 +49,12 @@ core = Intersect(Sphere(c, 0.25), Box(center = c, size = (L, L, L)))
 rve = RVE(Cell((1.0, 1.0, 1.0)), Phase(:inclusion, Cut(core, cross); refine = InterfaceRefinement(level = 2)))
 generate(rve; h = 0.1, output = "RVE.msh")
 ```
+
+Known limitations:
+
+- Bodies flush with a periodic face: the part of their boundary lying on the face is treated
+  as cell face (no interface refinement, no interface group there).
+- With refined inclusions the periodic size field makes meshing 1.5–5 times slower
+  (`MeshOptions(periodic_sizes = false)` to compare, a larger `growth` to speed it up).
+- Volumes of pieces bounded by B-spline surfaces (ellipsoids, non-uniform scalings) cut by a
+  face are computed by OpenCASCADE to about 1e-2.

@@ -37,6 +37,11 @@ InterfaceRefinement(h::Real; level=1.0, width=nothing, growth=nothing) =
 _refinement(x::Nothing) = nothing
 _refinement(x::Bool) = x ? InterfaceRefinement() : nothing
 _refinement(x::Real) = InterfaceRefinement(h=x)
+function _refinement(x::Integer)
+    @warn "refine = $x is read as an element size of $x at the interfaces (in the 2024 API an " *
+          "integer was a refinement level: use refine = InterfaceRefinement(level = $x) for that)"
+    return InterfaceRefinement(h=x)
+end
 _refinement(x::InterfaceRefinement) = x
 _refinement(x::NamedTuple) = InterfaceRefinement(; x...)
 _refinement(x) = throw(ArgumentError("refine must be a size, true/false, a NamedTuple or an " *

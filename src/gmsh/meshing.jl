@@ -9,7 +9,9 @@ shifts, points of the domain lie within `dmax` of a periodic image of the surfac
 Boxes are `(xmin, ymin, zmin, xmax, ymax, zmax)` tuples; only periodic directions shift.
 """
 function _image_shifts(boxes, dmax, lo, ext, periodic::NTuple{D,Bool}) where {D}
-    m = ntuple(d -> periodic[d] ? max(1, ceil(Int, dmax / ext[d])) : 0, D)
+    # Σ lies inside the domain, so for a point of the domain the image k + sign(k) e_d is never
+    # closer than k: shifts beyond the nearest neighbours are not needed, whatever dmax is
+    m = ntuple(d -> periodic[d] ? 1 : 0, D)
     ks = Set{NTuple{D,Int}}()
     for k in Iterators.product(ntuple(d -> -m[d]:m[d], D)...)
         all(==(0), k) && continue
@@ -60,25 +62,29 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{Interf
     # graded cones around the interfaces of refined phases (and of phases finer than H)
     hmin = opts.hmin === nothing ? 0.0 : S(opts.hmin)
     specs = Dict{NTuple{3,Float64},Vector{Int}}()
-    noeffect = Set{String}()
-    for s in ifs, (ip, ii) in s.sides
+    effective = Set{String}()
+    refined = Set{String}()
+    for s in ifs, (side, (ip, ii)) in enumerate(s.sides)
         ip >= 1 || continue
         ph = rve.phases[ip]
         ref = ph.refine
         hr = ref === nothing ? Inf :
              (ref.h === nothing ? _level_size(S(characteristic_length(ph.items[ii])), ref.level, H) : S(ref.h))
-        hi = max(min(hr, ph.h === nothing ? Inf : S(ph.h)), hmin)
-        if hi >= H
-            ref === nothing || push!(noeffect, ph.name)
-            continue
+        if ref !== nothing
+            push!(refined, ph.name)
+            other = s.sides[3-side][1]
+            # the refinement matters if it is finer than the bulk size on either side
+            hr < max(bulk(ip), other >= 0 ? bulk(other) : 0.0) && push!(effective, ph.name)
         end
+        hi = max(min(hr, ph.h === nothing ? Inf : S(ph.h)), hmin)
+        hi >= H && continue
         w = ref === nothing ? 0.0 : (ref.width === nothing ? hi : S(ref.width))
         g = ref === nothing || ref.growth === nothing ? opts.growth : ref.growth
         spec = (hi, w, w + (H - hi) / (g - 1))
         push!(get!(specs, spec, Int[]), Int(s.tag))
     end
-    for n in noeffect
-        @warn "phase $n: refine has no effect (the interface size is not smaller than the bulk size)"
+    for n in setdiff(refined, effective)
+        @warn "phase $n: refine has no effect (the interface size is not smaller than the bulk sizes on either side)"
     end
     listname = D == 3 ? "SurfacesList" : "CurvesList"
     lo = to_frame(frame, domain_origin(rve))
@@ -100,8 +106,6 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{Interf
         opts.periodic_sizes || continue
         # periodic size field: the same field evaluated at lattice-shifted points
         shifts = _image_shifts(boxes, dmax, lo, ext, rve.cell.periodic)
-        any(d -> rve.cell.periodic[d] && dmax > ext[d], 1:D) &&
-            @warn "the transition of a refined interface is longer than the cell; use a larger growth or a smaller h"
         for k in shifts
             p = f.add("Param")
             f.setNumber(p, "InField", thr)
@@ -119,7 +123,8 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{Interf
     gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
     gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", opts.curvature)
     gmsh.option.setNumber("Mesh.MeshSizeMin", hmin)
-    gmsh.option.setNumber("Mesh.MeshSizeMax", opts.hmax === nothing ? H : S(opts.hmax))
+    # hmin is a hard lower bound: it wins over the bulk sizes as well
+    gmsh.option.setNumber("Mesh.MeshSizeMax", max(opts.hmax === nothing ? H : S(opts.hmax), hmin))
     try
         gmsh.model.mesh.generate(D)
     catch e

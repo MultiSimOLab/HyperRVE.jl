@@ -3,12 +3,13 @@
 using RVEs: _image_shifts, classify_interfaces
 
 q(res) = res.stats.min_quality
-"Number of xmin nodes within `r` of (0, y, z)."
-function near_xmin(y, z, r)
+"Number of nodes on the plane x_d = c within distance `r` of the point `p` (3D or 2D)."
+function near_plane(d, c, p, r)
     _, x, _ = gmsh.model.mesh.getNodes()
     X = reshape(x, 3, :)
-    return count(i -> abs(X[1, i] - X[1, argmin(X[1, :])]) < 1e-9 && hypot(X[2, i] - y, X[3, i] - z) < r, axes(X, 2))
+    return count(i -> abs(X[d, i] - c) < 1e-9 && sqrt(sum(abs2, X[:, i] .- p)) < r, axes(X, 2))
 end
+near_xmin(y, z, r) = near_plane(1, 0.0, [0.0, y, z], r)
 "Mean longest edge of the elements of the volumes of a phase."
 function mean_edge(res, name)
     e = Int[]
@@ -93,8 +94,10 @@ end
     big = e7(true; cell=Cell((1e3, 1e3, 1e3)))
     @test abs(big.stats.nelements - per.stats.nelements) <= 0.01 * per.stats.nelements
     # semi-periodic: nothing is mirrored across the non-periodic direction
-    semi = generate(RVE(unitcell(periodic=(false, true, true)), Phase(:p, Sphere((0.78, 0.5, 0.5), 0.2); refine=0.02)); h=0.15)
-    @test q(semi) > 0.05
+    generate(RVE(unitcell(periodic=(false, true, true)), Phase(:p, Sphere((0.78, 0.5, 0.5), 0.2); refine=0.02)); h=0.15) do semi
+        @test q(semi) > 0.05
+        @test near_xmin(0.5, 0.5, 0.15) < 10
+    end
 end
 
 @testset "sizes: refine, growth, phase h, hmin, hmax" begin
@@ -114,10 +117,65 @@ end
     end
     bounded = generate(RVE(unitcell(), Phase(:p, s; refine=0.01)); h=0.15, mesh=MeshOptions(hmin=0.03))
     @test bounded.stats.hmin >= 0.5 * 0.03
-    capped = generate(RVE(unitcell(), Phase(:p, s)); mesh=MeshOptions(h=0.3, hmax=0.1))
+    capped = generate(RVE(unitcell(), Phase(:p, s; h=0.3)); mesh=MeshOptions(h=0.1, hmax=0.1))   # coarse phase capped
     @test capped.stats.hmax <= 2.5 * 0.1      # longest tet edge vs target size
     @test_logs (:warn, r"no effect") match_mode = :any generate(RVE(unitcell(), Phase(:p, s; refine=0.5)); h=0.15)
     # level rule of the 2024 API still works
     lv = generate(RVE(unitcell(), Phase(:p, s; refine=InterfaceRefinement(level=2))); h=0.15)
     @test lv.stats.nelements > plain.stats.nelements
+end
+
+@testset "periodic field in every direction, edges and corners (T1, T2)" begin
+    # sphere near ymax: its image refines ymin; near zmax: zmin
+    for (d, c) in ((2, (0.5, 0.78, 0.5)), (3, (0.5, 0.5, 0.78)))
+        generate(RVE(unitcell(), Phase(:p, Sphere(c, 0.2); refine=0.02)); h=0.15) do r
+            p = collect(c); p[d] = 0.0
+            @test near_plane(d, 0.0, p, 0.15) >= 20
+            @test q(r) > 0.05
+        end
+    end
+    # sphere near the xmax/ymax edge (not touching it): the image across the edge refines the
+    # opposite edge (0, 0, z), which needs the diagonal shift (1, 1, 0)
+    c = (0.86, 0.86, 0.5)
+    generate(RVE(unitcell(), Phase(:p, Sphere(c, 0.1); refine=0.015)); h=0.15) do r
+        @test near_plane(1, 0.0, [0.0, 0.0, 0.5], 0.12) >= 8
+        @test q(r) > 0.05
+    end
+    generate(RVE(unitcell(), Phase(:p, Sphere(c, 0.1); refine=0.015)); h=0.15, mesh=MeshOptions(periodic_sizes=false)) do r
+        @test near_plane(1, 0.0, [0.0, 0.0, 0.5], 0.12) < 8
+    end
+    # corner: the image across the corner refines the opposite corner (0, 0, 0)
+    generate(RVE(unitcell(), Phase(:p, Sphere((0.86, 0.86, 0.86), 0.1); refine=0.015)); h=0.15) do r
+        @test near_plane(1, 0.0, [0.0, 0.0, 0.0], 0.12) >= 4
+    end
+end
+
+@testset "2D mesh control (T3)" begin
+    cell = Cell((1.0, 1.0))
+    generate(RVE(cell, Phase(:p, Disk((0.78, 0.5), 0.2); refine=0.01)); h=0.1) do r
+        @test near_plane(1, 0.0, [0.0, 0.5, 0.0], 0.1) >= 10
+        @test q(r) > 0.1
+        @test all(c -> c.ok, r.periodicity)
+    end
+    generate(RVE(cell, Phase(:p, Disk((0.5, 0.5), 0.25); h=0.02)); h=0.1) do r
+        e(name) = begin
+            t = Int[]
+            for v in r[name].entities
+                _, et, _ = gmsh.model.mesh.getElements(2, v); append!(t, reduce(vcat, et))
+            end
+            m = gmsh.model.mesh.getElementQualities(t, "maxEdge"); sum(m) / length(m)
+        end
+        @test e(:p) < 0.04 && e(:matrix) > 2 * e(:p)
+    end
+end
+
+@testset "options validation and warnings" begin
+    s = Sphere((0.5, 0.5, 0.5), 0.25)
+    @test_throws ArgumentError generate(RVE(unitcell(), Phase(:p, s)); h=0.1, mesh=MeshOptions(hmin=0.2))
+    @test_throws ArgumentError MeshOptions(h=0.3, hmax=0.1)
+    @test MeshOptions(curvature=6.0).curvature == 6
+    @test_logs (:warn, r"level") Phase(:p, s; refine=2)
+    # hmin coarser than a phase size wins
+    r = generate(RVE(unitcell(), Phase(:p, s; h=0.02)); h=0.15, mesh=MeshOptions(hmin=0.08))
+    @test r.stats.hmin >= 0.5 * 0.08
 end
