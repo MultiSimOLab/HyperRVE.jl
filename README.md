@@ -1,4 +1,6 @@
-# HyperRVE.jl
+<p align="center">
+<img alt="HyperRVE.jl" src="docs/imgs/logo.png" width="420">
+</p>
 
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://multisimolab.github.io/HyperRVE.jl/stable/)
