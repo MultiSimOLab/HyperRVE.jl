@@ -2,7 +2,7 @@
 
 Version 2 replaces the whole public API. The table maps every old call to its replacement.
 
-| 2024 API | Version 2 |
+| 2024 API | 0.2 |
 |----|----|
 | `startGmsh()`, `stopGmsh()`, `ShowInfo(n)` | handled by `generate`; `verbosity = n` |
 | `RVE(size, flags, origin, h)` | `Cell(size; origin, periodic)`, `RVE(cell, phases)`, `generate(rve; h)` |
@@ -43,7 +43,7 @@ startGmsh()
 model, tagvol = createGmshModel(RVE([1.0, 1.0, 1.0], [1, 1, 1], [0.0, 0.0, 0.0], 0.1), (Cut(geo7, geo4, 2),), "RVE")
 createMesh!(model, myRVE, myInclusions, tagvol); saveMesh("RVE.msh"); stopGmsh()
 
-# version 2
+# version 0.2
 c = (0.5, 0.5, 0.5)
 cross = Fuse(Fibre(c, (1, 0, 0), 0.1), Fibre(c, (0, 1, 0), 0.1), Fibre(c, (0, 0, 1), 0.1))
 core = Intersect(Sphere(c, 0.25), Box(center = c, size = (L, L, L)))

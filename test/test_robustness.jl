@@ -1,4 +1,4 @@
-# Regression tests from the review of the v2 rewrite.
+# Regression tests from the review of the 0.2 rewrite.
 
 @testset "small inclusion with a coarse global size (no refine)" begin
     for (r, h) in ((0.03, nothing), (0.05, 0.2), (0.1, 0.25), (0.2, 0.5))
