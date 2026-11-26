@@ -24,5 +24,6 @@ mesh next to the script.
 | `17_auxetic_cells.jl` | chiral and anti-chiral lattices, rotating squares and triangles (auxetic 2D) |
 | `18_particle_mixtures.jl` | hard + soft particle mixtures, chains with filler, clustered disks |
 | `19_short_fibres.jl` | random short fibres: isotropic, in-plane, aligned, and a hybrid with particles |
+| `20_plate_lattices.jl` | SC, BCC, FCC plate lattices, isotropic SC + FCC, filled cells |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.

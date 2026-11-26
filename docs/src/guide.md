@@ -131,6 +131,24 @@ c = lattice_cell(:rotating_squares; a = 1.0, angle = π / 6)
 Phase(:squares, rotating_squares(c; angle = π / 6, hinge = 0.08); fuse = true)
 ```
 
+## Plate lattices
+
+`plate_cells(cell, kind; thickness | density, ratio)` returns the closed cells left by plates
+on the planes of `kind`: `:sc` (cube faces), `:bcc` ({110}), `:fcc` ({111}) or a tuple such as
+`(:sc, :fcc)`. The plates are the rest of the cell, so the cells go to a void phase and the
+plates are the matrix (or the cells are a second material):
+
+```julia
+cells = plate_cells(cell, (:sc, :fcc); density = 0.3)          # isotropic SC + FCC by default
+RVE(cell, Phase(:cells, cells; void = true); matrix = :plates)
+```
+
+`plate_density(cell, kind; thickness)` is the exact relative density and
+`plate_thickness(cell, kind, density; ratio)` its inverse (`plate_density(kind, t / a)` and
+`plate_thickness(kind, density)` for a cube of edge `a`). `ratio = :isotropic` gives the
+elastically isotropic SC + FCC lattice (`t_sc / t_fcc = 8√3/9`); other combinations need
+`ratio`. Thin plates need a mesh size of about half their thickness.
+
 ## Random packings
 
 `random_spheres(cell; ...)`, `random_disks(cell; ...)` (2D) and `random_fibres(cell; axis, ...)`

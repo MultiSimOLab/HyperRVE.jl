@@ -25,6 +25,7 @@ include("helpers.jl")
     @testset "Polyhedra and polygons" begin include("test_polyhedra.jl") end
     @testset "Voronoi tessellations" begin include("test_voronoi.jl") end
     @testset "Void phases and foams" begin include("test_foams.jl") end
+    @testset "Plate lattices" begin include("test_plates.jl") end
     @testset "Particle chains" begin include("test_chains.jl") end
     @testset "Particle arrays and laminates" begin include("test_arrays.jl") end
     @testset "Auxetic 2D cells" begin include("test_auxetic.jl") end
