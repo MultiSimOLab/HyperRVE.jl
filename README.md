@@ -38,6 +38,10 @@ can be read directly with GridapGmsh.
 <td align="center"><img src="docs/imgs/gallery/mre_chains_2d.png" width="180"><br>2D chains</td>
 <td align="center"><img src="docs/imgs/gallery/disks2d.png" width="180"><br>2D disks, two sizes</td>
 </tr>
+<tr>
+<td align="center"><img src="docs/imgs/gallery/reentrant.png" width="180"><br>re-entrant (auxetic) 2D</td>
+<td align="center"><img src="docs/imgs/gallery/kagome.png" width="180"><br>kagome 2D</td>
+</tr>
 </table>
 
 ```julia
@@ -50,6 +54,9 @@ grain_phases(voronoi(cell; n = 20, lloyd = 2, rng = 1))                         
 t = voronoi(cell; n = 8, rng = 1); pores(t; wall = wall_thickness(t, 0.15))            # closed foam
 foam_struts(voronoi(cell; seeds = [(0, 0, 0), (0.5, 0.5, 0.5)]); radius = 0.035)       # Kelvin foam
 random_spheres(cell; radius = 0.1, fraction = 0.2, rng = 3)                            # random packing
+particle_array(cell, :fcc; fraction = 0.3)                                             # regular array
+laminate(cell; axis = 3, fractions = (0.3, 0.7))                                       # laminate (phases)
+lattice(lattice_cell(:reentrant; a = 0.25), :reentrant; thickness = 0.025)             # 2D auxetic lattice
 ```
 
 # Examples

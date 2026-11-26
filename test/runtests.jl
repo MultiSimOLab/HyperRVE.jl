@@ -17,11 +17,13 @@ include("helpers.jl")
     @testset "Interface groups" begin include("test_interfaces.jl") end
     @testset "Capsules and fused phases" begin include("test_fuse.jl") end
     @testset "Strut lattices" begin include("test_lattices.jl") end
+    @testset "More lattices (BCCZ, FCCZ, 2D)" begin include("test_lattices_more.jl") end
     @testset "Random packings" begin include("test_random.jl") end
     @testset "Polyhedra and polygons" begin include("test_polyhedra.jl") end
     @testset "Voronoi tessellations" begin include("test_voronoi.jl") end
     @testset "Void phases and foams" begin include("test_foams.jl") end
     @testset "Particle chains" begin include("test_chains.jl") end
+    @testset "Particle arrays and laminates" begin include("test_arrays.jl") end
     @testset "Session" begin include("test_session.jl") end
     @testset "Robustness" begin include("test_robustness.jl") end
     @testset "Aqua" begin Aqua.test_all(HyperRVE) end
