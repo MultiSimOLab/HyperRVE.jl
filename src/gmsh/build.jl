@@ -58,6 +58,44 @@ end
 
 build!(g::Rectangle, ::BuildContext) = DimTag[(2, gmsh.model.occ.addRectangle(g.corner..., 0.0, g.size...))]
 
+# OpenCASCADE merges points closer than ~1e-7 (frame units: the longest cell edge is 1)
+function _check_edges_frame(v, loops, what)
+    for l in loops, k in eachindex(l)
+        a, b = l[k], l[mod1(k + 1, length(l))]
+        _norm(v[a] .- v[b]) > 1e-7 ||
+            throw(ArgumentError("$what: edge between vertices $a and $b is shorter than 1e-7 of the cell, " *
+                                "too short for OpenCASCADE; merge the vertices"))
+    end
+end
+
+function build!(g::Polyhedron, ::BuildContext)
+    occ = gmsh.model.occ
+    _check_edges_frame(g.vertices, g.faces, "Polyhedron")
+    p = [occ.addPoint(x...) for x in g.vertices]
+    line = Dict{Tuple{Int,Int},Int32}()
+    surfs = Int32[]
+    for f in g.faces
+        loop = Int32[]
+        for (a, b) in zip(f, circshift(f, -1))
+            if haskey(line, (b, a))
+                push!(loop, -line[(b, a)])
+            else
+                push!(loop, get!(() -> occ.addLine(p[a], p[b]), line, (a, b)))
+            end
+        end
+        push!(surfs, occ.addPlaneSurface([occ.addCurveLoop(loop)]))
+    end
+    return DimTag[(3, occ.addVolume([occ.addSurfaceLoop(surfs)]))]
+end
+
+function build!(g::Polygon, ::BuildContext)
+    occ = gmsh.model.occ
+    _check_edges_frame(g.vertices, [collect(eachindex(g.vertices))], "Polygon")
+    p = [occ.addPoint(x..., 0.0) for x in g.vertices]
+    l = [occ.addLine(p[i], p[mod1(i + 1, length(p))]) for i in eachindex(p)]
+    return DimTag[(2, occ.addPlaneSurface([occ.addCurveLoop(l)]))]
+end
+
 function build!(g::Fuse{D}, ctx::BuildContext) where {D}
     tags = build!(g.parts[1], ctx)
     length(g.parts) == 1 && return tags

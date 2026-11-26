@@ -15,7 +15,7 @@ using Printf: @sprintf
 using Random: Random, AbstractRNG
 
 export Cell, cellpoint
-export Geometry, Sphere, Ellipsoid, Box, Cylinder, Capsule, Fibre, Disk, Ellipse, Rectangle
+export Geometry, Sphere, Ellipsoid, Box, Cylinder, Capsule, Fibre, Disk, Ellipse, Rectangle, Polyhedron, Polygon
 export Fuse, Cut, Intersect, Translate, Rotate, Scale
 export Phase, RVE, supercell
 export struts, lattice, lattice_topology, relative_density, strut_radius

@@ -320,6 +320,163 @@ function Scale(g::Geometry{D}, factors; center=refpoint(g)) where {D}
     return Scale{D}(g, f, _vec(Val(D), center, "Scale center"))
 end
 
+
+"""
+    Polyhedron(vertices, faces)
+    Polyhedron(; vertices, faces)
+
+Solid bounded by planar polygonal faces: `faces` are loops of indices into `vertices` (either
+orientation). The surface must be closed (every edge in exactly two faces) and each face
+planar (split non-planar faces into triangles). The solid need not be convex. A Voronoi grain,
+a prism, a faceted particle.
+"""
+struct Polyhedron <: Geometry{3}
+    vertices::Vector{Vec{3}}
+    faces::Vector{Vector{Int}}
+    function Polyhedron(vertices, faces)
+        v = Vec{3}[_vec(Val(3), p, "Polyhedron vertex") for p in vertices]
+        f = Vector{Int}[]
+        faces isa AbstractVector || throw(ArgumentError("Polyhedron: faces must be a vector of index loops"))
+        for face in faces
+            (face isa Union{AbstractVector,Tuple} && all(x -> x isa Integer && !(x isa Bool), face)) ||
+                throw(ArgumentError("Polyhedron: a face is a list of vertex indices, got $face"))
+            push!(f, Int.(collect(face)))
+        end
+        length(v) >= 4 && length(f) >= 4 || throw(ArgumentError("Polyhedron: needs at least 4 vertices and 4 faces"))
+        L = maximum(p -> _norm(p .- v[1]), v)
+        used = falses(length(v))
+        for face in f, i in face
+            1 <= i <= length(v) && (used[i] = true)
+        end
+        all(used) || throw(ArgumentError("Polyhedron: vertices $(findall(.!used)) are not used by any face"))
+        _check_distinct(v, L, "Polyhedron")
+        edges = Dict{Tuple{Int,Int},Int}()
+        for face in f
+            length(unique(face)) == length(face) >= 3 ||
+                throw(ArgumentError("Polyhedron: face $face needs at least 3 distinct vertices"))
+            all(i -> 1 <= i <= length(v), face) || throw(ArgumentError("Polyhedron: face $face refers to a missing vertex"))
+            n = _face_normal(v, face)
+            _norm(n) > 1e-12 * L^2 || throw(ArgumentError("Polyhedron: face $face has zero area"))
+            u = n ./ _norm(n)
+            all(i -> abs(sum((v[i] .- v[face[1]]) .* u)) <= 1e-9 * L, face) ||
+                throw(ArgumentError("Polyhedron: face $face is not planar; split it into triangles"))
+            for (a, b) in zip(face, circshift(face, -1))
+                k = minmax(a, b)
+                edges[k] = get(edges, k, 0) + 1
+            end
+        end
+        bad = [k for (k, c) in edges if c != 2]
+        isempty(bad) || throw(ArgumentError("Polyhedron: the surface is not closed (edges $(first(bad, 3)) are not in exactly two faces)"))
+        vol = abs(_polyhedron_volume(v, f))
+        vol > 1e-12 * L^3 || throw(ArgumentError("Polyhedron: zero volume"))
+        return new(v, f)
+    end
+end
+Polyhedron(; vertices, faces) = Polyhedron(vertices, faces)
+
+# vertices closer than OpenCASCADE's tolerance (1e-7 of the size) cannot become separate points
+function _check_distinct(v, L, what)
+    for i in eachindex(v), j in i+1:length(v)
+        _norm(v[i] .- v[j]) > 1e-7 * L ||
+            throw(ArgumentError("$what: vertices $i and $j coincide (closer than 1e-7 of the size); merge them"))
+    end
+    return nothing
+end
+
+# Newell normal (twice the area vector) of a planar loop
+function _face_normal(v, face)
+    n = (0.0, 0.0, 0.0)
+    o = v[face[1]]
+    for (a, b) in zip(face, circshift(face, -1))
+        p, q = v[a] .- o, v[b] .- o
+        n = n .+ ((p[2] - q[2]) * (p[3] + q[3]), (p[3] - q[3]) * (p[1] + q[1]), (p[1] - q[1]) * (p[2] + q[2]))
+    end
+    return n
+end
+
+# signed volume and volume centroid with faces oriented consistently; orientation fixed by
+# propagation over shared edges
+function _oriented_faces(v, f)
+    out = [copy(x) for x in f]
+    nf = length(out)
+    done = falses(nf); done[1] = true
+    queue = [1]
+    while !isempty(queue)
+        i = popfirst!(queue)
+        de = Set(zip(out[i], circshift(out[i], -1)))
+        for j in 1:nf
+            done[j] && continue
+            ej = collect(zip(out[j], circshift(out[j], -1)))
+            shares_same = any(e -> e in de, ej)
+            shares_rev = any(e -> (e[2], e[1]) in de, ej)
+            (shares_same || shares_rev) || continue
+            shares_same && reverse!(out[j])
+            done[j] = true; push!(queue, j)
+        end
+    end
+    all(done) || throw(ArgumentError("Polyhedron: the faces do not form one connected surface"))
+    return out
+end
+
+function _polyhedron_volume(v, f)
+    o = v[1]
+    v = [p .- o for p in v]                  # relative coordinates: no cancellation far from the origin
+    of = _oriented_faces(v, f)
+    vol = 0.0
+    for face in of, k in 2:length(face)-1
+        a, b, c = v[face[1]], v[face[k]], v[face[k+1]]
+        vol += (a[1] * (b[2] * c[3] - b[3] * c[2]) - a[2] * (b[1] * c[3] - b[3] * c[1]) + a[3] * (b[1] * c[2] - b[2] * c[1])) / 6
+    end
+    return vol
+end
+
+function _polyhedron_centroid(v, f)
+    o = v[1]
+    v = [p .- o for p in v]
+    of = _oriented_faces(v, f)
+    vol = 0.0; c = (0.0, 0.0, 0.0)
+    for face in of, k in 2:length(face)-1
+        a, b, d = v[face[1]], v[face[k]], v[face[k+1]]
+        t = (a[1] * (b[2] * d[3] - b[3] * d[2]) - a[2] * (b[1] * d[3] - b[3] * d[1]) + a[3] * (b[1] * d[2] - b[2] * d[1])) / 6
+        vol += t; c = c .+ t .* (a .+ b .+ d) ./ 4
+    end
+    return o .+ c ./ vol
+end
+
+"""
+    Polygon(vertices)
+    Polygon(; vertices)
+
+Simple polygon in a 2D cell (either orientation; self-intersection is not checked).
+"""
+struct Polygon <: Geometry{2}
+    vertices::Vector{Vec{2}}
+    function Polygon(vertices)
+        v = Vec{2}[_vec(Val(2), p, "Polygon vertex") for p in vertices]
+        length(v) >= 3 || throw(ArgumentError("Polygon: needs at least 3 vertices"))
+        L = maximum(p -> _norm(p .- v[1]), v)
+        _check_distinct(v, L, "Polygon")
+        abs(_polygon_area(v)) > 1e-12 * L^2 || throw(ArgumentError("Polygon: zero area"))
+        return new(v)
+    end
+end
+Polygon(; vertices) = Polygon(vertices)
+
+_polygon_area(v) = _polygon_area0([p .- v[1] for p in v])
+_polygon_area0(v) = sum(v[i][1] * v[mod1(i + 1, length(v))][2] - v[mod1(i + 1, length(v))][1] * v[i][2] for i in eachindex(v)) / 2
+function _polygon_centroid(v)
+    o = v[1]
+    v = [p .- o for p in v]
+    A = _polygon_area0(v); cx = 0.0; cy = 0.0
+    for i in eachindex(v)
+        p, q = v[i], v[mod1(i + 1, length(v))]
+        w = p[1] * q[2] - q[1] * p[2]
+        cx += (p[1] + q[1]) * w; cy += (p[2] + q[2]) * w
+    end
+    return (o[1] + cx / (6A), o[2] + cy / (6A))
+end
+
+
 # ----------------------------------------------------------------------------- traits
 
 """
@@ -333,6 +490,8 @@ refpoint(g::Box) = g.corner .+ g.size ./ 2
 refpoint(g::Union{Disk,Ellipse}) = g.center
 refpoint(g::Capsule) = (g.p1 .+ g.p2) ./ 2
 refpoint(g::Rectangle) = g.corner .+ g.size ./ 2
+refpoint(g::Polyhedron) = _polyhedron_centroid(g.vertices, g.faces)
+refpoint(g::Polygon) = _polygon_centroid(g.vertices)
 refpoint(g::Cylinder) = g.base .+ g.axis ./ 2
 refpoint(g::Fibre) = g.point
 refpoint(g::Union{Fuse,Intersect}) = refpoint(first(g.parts))
@@ -352,6 +511,10 @@ characteristic_length(g::Box) = minimum(g.size)
 characteristic_length(g::Disk) = g.radius
 characteristic_length(g::Ellipse) = minimum(g.radii)
 characteristic_length(g::Rectangle) = minimum(g.size)
+characteristic_length(g::Polyhedron) =     # 3V / A: the inradius of a regular polyhedron
+    3abs(_polyhedron_volume(g.vertices, g.faces)) / sum(f -> _norm(_face_normal(g.vertices, f)) / 2, g.faces)
+characteristic_length(g::Polygon) =        # 2A / perimeter
+    2abs(_polygon_area(g.vertices)) / sum(i -> _norm(g.vertices[i] .- g.vertices[mod1(i + 1, length(g.vertices))]), eachindex(g.vertices))
 characteristic_length(g::Union{Cylinder,Fibre,Capsule}) = g.radius
 characteristic_length(g::Union{Fuse,Intersect}) = minimum(characteristic_length, g.parts)
 characteristic_length(g::Cut) = min(characteristic_length(g.object), minimum(characteristic_length, g.tools))
