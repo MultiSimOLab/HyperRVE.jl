@@ -45,6 +45,10 @@ can be read directly with GridapGmsh.
 <td align="center"><img src="docs/imgs/gallery/antitetrachiral.png" width="180"><br>anti-tetrachiral</td>
 <td align="center"><img src="docs/imgs/gallery/rotating_squares.png" width="180"><br>rotating squares</td>
 </tr>
+<tr>
+<td align="center"><img src="docs/imgs/gallery/mixture.png" width="180"><br>hard + soft mixture</td>
+<td align="center"><img src="docs/imgs/gallery/clusters2d.png" width="180"><br>clustered disks + filler</td>
+</tr>
 </table>
 
 ```julia
@@ -57,6 +61,8 @@ grain_phases(voronoi(cell; n = 20, lloyd = 2, rng = 1))                         
 t = voronoi(cell; n = 8, rng = 1); pores(t; wall = wall_thickness(t, 0.15))            # closed foam
 foam_struts(voronoi(cell; seeds = [(0, 0, 0), (0.5, 0.5, 0.5)]); radius = 0.035)       # Kelvin foam
 random_spheres(cell; radius = 0.1, fraction = 0.2, rng = 3)                            # random packing
+random_spheres(cell; radius = 0.05, n = 20, avoid = random_spheres(cell; radius = 0.12, n = 4, rng = 1))  # mixture
+random_spheres(cell; radius = 0.04, n = 30, cluster = (n = 3, radius = 0.2), rng = 2)  # clusters
 particle_array(cell, :fcc; fraction = 0.3)                                             # regular array
 laminate(cell; axis = 3, fractions = (0.3, 0.7))                                       # laminate (phases)
 lattice(lattice_cell(:reentrant; a = 0.25), :reentrant; thickness = 0.025)             # 2D auxetic lattice

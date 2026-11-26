@@ -22,5 +22,6 @@ mesh next to the script.
 | `15_more_lattices.jl` | BCCZ and FCCZ lattices; 2D square, triangular, honeycomb, kagome and re-entrant (auxetic) lattices |
 | `16_arrays_and_laminates.jl` | regular particle arrays (SC, BCC, FCC, hexagonal 2D) and laminates |
 | `17_auxetic_cells.jl` | chiral and anti-chiral lattices, rotating squares and triangles (auxetic 2D) |
+| `18_particle_mixtures.jl` | hard + soft particle mixtures, chains with filler, clustered disks |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.
