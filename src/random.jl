@@ -138,12 +138,17 @@ end
 
 # ---------------------------------------------------------------- obstacles (avoid) and clusters
 
-# obstacles as segments with a radius (spheres: a == b), in cell-local coordinates, with all the
-# periodic images that a candidate inside the cell can reach
+# obstacles as segments with a radius (spheres: a == b; infinite fibres: the point and their axis
+# `ax`, along which the distance is not measured), in cell-local coordinates, with all the
+# periodic images that a candidate inside the cell can reach, binned on a uniform grid
 struct _Obstacles{D}
     a::Vector{NTuple{D,Float64}}
     b::Vector{NTuple{D,Float64}}
     r::Vector{Float64}
+    ax::Vector{Int}
+    nb::NTuple{D,Int}
+    L::NTuple{D,Float64}
+    bins::Dict{NTuple{D,Int},Vector{Int}}
 end
 
 _flat_items(x::Geometry) = Geometry[x]
@@ -182,8 +187,7 @@ end
 function _segment(g::Fibre, s)
     k = findfirst(x -> abs(abs(x) - 1) < 1e-12, g.direction)
     k === nothing && throw(ArgumentError("avoid: only fibres parallel to a cell axis are supported"))
-    e = ntuple(i -> i == k ? 1.0 : 0.0, 3)
-    return (g.point .+ s .- 1e6 .* e, g.point .+ s .+ 1e6 .* e, g.radius, k)
+    return (g.point .+ s, g.point .+ s, g.radius, k)
 end
 _segment(g::Translate, s) = _segment(g.child, s .+ g.shift)
 _segment(g, s) = throw(ArgumentError("avoid: unsupported geometry $(nameof(typeof(g))); supported: $_AVOID_TYPES"))
@@ -191,7 +195,7 @@ _segment(g, s) = throw(ArgumentError("avoid: unsupported geometry $(nameof(typeo
 function _obstacles(::Val{D}, avoid, origin, L, per, reach) where {D}
     items = _flat_items(avoid)
     isempty(items) && return nothing
-    A, B, Rs = NTuple{D,Float64}[], NTuple{D,Float64}[], Float64[]
+    A, B, Rs, AX = NTuple{D,Float64}[], NTuple{D,Float64}[], Float64[], Int[]
     for g in items
         g isa Geometry{D} || throw(ArgumentError("avoid: a $(D)D packing cannot avoid the $(nameof(typeof(g))) " *
                                                  "of dimension $(3 - (D == 3))"))
@@ -205,17 +209,38 @@ function _obstacles(::Val{D}, avoid, origin, L, per, reach) where {D}
         end
         for k in Iterators.product(ks...)
             sh = ntuple(d -> k[d] * L[d], D)
-            push!(A, a .+ sh); push!(B, b .+ sh); push!(Rs, r)
+            push!(A, a .+ sh); push!(B, b .+ sh); push!(Rs, r); push!(AX, fax)
         end
     end
-    return _Obstacles{D}(A, B, Rs)
+    # uniform grid over the cell; each image is listed in the bins its inflated box covers
+    w = 2reach
+    nb = ntuple(d -> clamp(floor(Int, L[d] / w), 1, 64), D)
+    bins = Dict{NTuple{D,Int},Vector{Int}}()
+    for i in eachindex(Rs)
+        m = Rs[i] + reach
+        rngs = ntuple(D) do d
+            AX[i] == d && return 0:nb[d]-1
+            lo = clamp(floor(Int, (min(A[i][d], B[i][d]) - m) / L[d] * nb[d]), 0, nb[d] - 1)
+            hi = clamp(floor(Int, (max(A[i][d], B[i][d]) + m) / L[d] * nb[d]), 0, nb[d] - 1)
+            lo:hi
+        end
+        for k in Iterators.product(rngs...)
+            push!(get!(bins, k, Int[]), i)
+        end
+    end
+    return _Obstacles{D}(A, B, Rs, AX, nb, Tuple(Float64.(L)), bins)
 end
 
 # true if the ball (x, ρ) keeps clear of every obstacle (ρ = radius + gap)
 function _clear(o::_Obstacles{D}, x, ρ) where {D}
-    @inbounds for i in eachindex(o.r)
-        a, b, lim = o.a[i], o.b[i], o.r[i] + ρ
-        any(d -> x[d] < min(a[d], b[d]) - lim || x[d] > max(a[d], b[d]) + lim, 1:D) && continue
+    key = ntuple(d -> clamp(floor(Int, x[d] / o.L[d] * o.nb[d]), 0, o.nb[d] - 1), D)
+    @inbounds for i in get(o.bins, key, Int[])
+        a, b, lim, ax = o.a[i], o.b[i], o.r[i] + ρ, o.ax[i]
+        any(d -> d != ax && (x[d] < min(a[d], b[d]) - lim || x[d] > max(a[d], b[d]) + lim), 1:D) && continue
+        if ax > 0                                       # infinite fibre: distance to its axis line
+            sum(d -> d == ax ? 0.0 : (x[d] - a[d])^2, 1:D) < lim^2 && return false
+            continue
+        end
         ab = b .- a
         l2 = sum(abs2, ab)
         t = l2 == 0 ? 0.0 : clamp(sum((x .- a) .* ab) / l2, 0.0, 1.0)
@@ -225,14 +250,16 @@ function _clear(o::_Obstacles{D}, x, ρ) where {D}
 end
 
 # cluster = (n | centers, radius, share = 1): proposal of candidate centres
-function _cluster(::Val{D}, cluster, rng, origin, L, per, what) where {D}
+function _cluster(::Val{D}, cluster, rng, origin, L, per, inside, what) where {D}
     cluster isa NamedTuple || throw(ArgumentError("$what: cluster must be a named tuple (n = ..., radius = ...), got $(repr(cluster))"))
     bad = setdiff(keys(cluster), (:n, :radius, :share, :centers))
     isempty(bad) || throw(ArgumentError("$what: unknown cluster keys $(join(bad, ", ")); use n, radius, share, centers"))
     haskey(cluster, :n) == haskey(cluster, :centers) &&
         throw(ArgumentError("$what: cluster needs exactly one of n and centers"))
     R = get(cluster, :radius, nothing)
-    R isa Real && R > 0 || throw(ArgumentError("$what: cluster radius must be a positive number"))
+    R isa Real && isfinite(R) && R > 0 || throw(ArgumentError("$what: cluster radius must be a positive finite number"))
+    all(d -> !per[d] || 2R < L[d], 1:D) ||
+        throw(ArgumentError("$what: cluster radius $R must be smaller than half the cell along its periodic directions"))
     share = get(cluster, :share, 1.0)
     share isa Real && 0 < share <= 1 || throw(ArgumentError("$what: cluster share must be in (0, 1], got $(repr(share))"))
     if haskey(cluster, :n)
@@ -243,6 +270,10 @@ function _cluster(::Val{D}, cluster, rng, origin, L, per, what) where {D}
         cs = cluster.centers
         cs isa Union{AbstractVector,Tuple} && !isempty(cs) || throw(ArgumentError("$what: cluster centers must be a non-empty list of points"))
         C = [Tuple(Float64.(_vec(Val(D), c, "cluster center") .- origin)) for c in cs]
+        for c in C, d in 1:D
+            per[d] || 0 <= c[d] <= L[d] ||
+                throw(ArgumentError("$what: cluster center outside the cell along the non-periodic direction $d"))
+        end
     end
     function propose(rng, lo, hi)
         if share < 1 && rand(rng) >= share
@@ -252,7 +283,7 @@ function _cluster(::Val{D}, cluster, rng, origin, L, per, what) where {D}
         v = ntuple(_ -> randn(rng), D)
         nv = sqrt(sum(abs2, v))
         ρ = R * rand(rng)^(1 / D) / nv
-        x = ntuple(d -> per[d] ? mod(c[d] + ρ * v[d], L[d]) : c[d] + ρ * v[d], D)
+        x = ntuple(d -> per[d] && !inside ? mod(c[d] + ρ * v[d], L[d]) : c[d] + ρ * v[d], D)
         all(d -> lo[d] <= x[d] <= hi[d], 1:D) || return nothing
         return x
     end
@@ -288,9 +319,10 @@ function _packing(::Val{D}, what, L, per, V, radius, fraction, n, min_gap, face_
     obst = _obstacles(Val(D), avoid, origin, Tuple(Float64.(L)), per, radii[1] + gap)
     propose = nothing
     if cluster !== nothing
-        propose, nc, Rc, share = _cluster(Val(D), cluster, rng, origin, Tuple(Float64.(L)), per, what)
-        loc = share * sum(_ballvol(Val(D), r + gap / 2) for r in radii) / (nc * _ballvol(Val(D), Rc + radii[1]))
-        length(radii) >= 3 && loc > _SAT[D] &&
+        propose, nc, Rc, share = _cluster(Val(D), cluster, rng, origin, Tuple(Float64.(L)), per, inside, what)
+        # necessary condition when every inclusion must go to the clusters (equal sizes)
+        loc = sum(_ballvol(Val(D), r + gap / 2) for r in radii) / (nc * _ballvol(Val(D), Rc + radii[1]))
+        share == 1 && (radius isa Real || radius === nothing) && length(radii) >= 3 && loc > _SAT[D] &&
             throw(ArgumentError(@sprintf("%s: the clusters would need a local fraction %.3f, above the random sequential addition limit %.3f; increase the cluster radius or n, or lower share",
                                          what, loc, _SAT[D])))
     end
@@ -300,6 +332,8 @@ function _packing(::Val{D}, what, L, per, V, radius, fraction, n, min_gap, face_
         want = sum(_ballvol(Val(D), r) for r in radii) / V
         msg = @sprintf("%s: placed %d of %d inclusions (fraction %.3f of the requested %.3f) after %d attempts for the next one. Random sequential addition reaches about %.2f for equal %s with this min_gap; reduce fraction, min_gap or face_gap, or use a size distribution",
                        what, length(X), length(radii), got, want, max_tries, 0.9 * _SAT[D] / (1 + gap / (2radii[end]))^D, what == "random_spheres" ? "spheres" : what == "random_fibres" ? "fibres" : what == "particle_chains" ? "chains" : "disks")
+        obst === nothing || (msg *= "; the inclusions to avoid take part of the cell")
+        cluster === nothing || (msg *= "; the clusters may be full: increase their radius or n, or lower share")
         strict ? error(msg) : @warn(msg)
     end
     return X, radii[1:length(X)]
@@ -307,8 +341,8 @@ end
 
 """
     random_spheres(cell; radius, fraction, n, min_gap = :auto, face_gap = :auto,
-                   boundary = :periodic, rng = Random.default_rng(), max_tries = 50_000,
-                   strict = true) -> Vector{Sphere}
+                   boundary = :periodic, avoid = nothing, cluster = nothing,
+                   rng = Random.default_rng(), max_tries = 50_000, strict = true) -> Vector{Sphere}
 
 Non-overlapping spheres placed by random sequential addition. Give exactly two of `radius`,
 `fraction` and `n`; or `radius` as a vector of radii; or `radius` as a function `rng -> r`
@@ -328,14 +362,17 @@ Non-overlapping spheres placed by random sequential addition. Give exactly two o
   value of the returned inclusions.
 - `avoid`: geometries already placed (another population, `particle_chains`, items made by
   hand; a geometry, a vector, or a tuple of vectors) that the new inclusions keep `min_gap`
-  away from, periodic images included. Exact for spheres, disks, capsules and fibres parallel
-  to a cell axis; cylinders, ellipsoids and ellipses are replaced by the capsule that contains
-  them. Mixtures: one call and one phase per population, largest first, each `fraction` of
+  away from (the `min_gap` of this call, by default 0.1 times its smallest radius), periodic
+  images included. Exact for spheres, disks, capsules and fibres parallel to a cell axis;
+  cylinders, ellipsoids and ellipses are replaced by the capsule that contains them
+  (conservative: for flat ellipsoids it is a sphere). Mixtures: one call and one phase per population, largest first, each `fraction` of
   the whole cell: `soft = random_spheres(cell; radius = 0.05, fraction = 0.05, avoid = hard)`.
 - `cluster = (n = 4, radius = 0.2)`: clustered inclusions. `n` cluster centres are drawn
   uniformly (or given as `centers = [...]`) and each inclusion is placed uniformly in the ball
   of radius `radius` around one of them; with `share = s < 1` only a fraction `s` of the
-  attempts go to the clusters and the rest to the whole cell.
+  attempts (not of the inclusions) go to the clusters and the rest to the whole cell. The
+  cluster radius must be below half the cell; with `boundary = :inside` clusters do not wrap
+  across the faces.
 - `rng`: an `AbstractRNG` or an integer seed; same seed and Julia version, same packing.
 
 Achievable fractions with equal spheres: about 0.35 (`min_gap = 0`), 0.30 (`0.1 r`), 0.26
@@ -352,9 +389,9 @@ function random_spheres(cell::Cell{3}; radius=nothing, fraction=nothing, n=nothi
 end
 
 """
-    random_disks(cell; radius, fraction, n, ...) -> Vector{Disk}
+    random_disks(cell; radius, fraction, n, avoid, cluster, ...) -> Vector{Disk}
 
-2D version of [`random_spheres`](@ref), same keywords. Achievable fractions with equal disks:
+2D version of [`random_spheres`](@ref), same keywords (`avoid` takes 2D geometries). Achievable fractions with equal disks:
 about 0.50 (`min_gap = 0`), 0.48 (`0.1 r`), 0.45 (`0.2 r`).
 """
 function random_disks(cell::Cell{2}; radius=nothing, fraction=nothing, n=nothing, min_gap=:auto, face_gap=:auto,
@@ -370,6 +407,8 @@ end
 
 Infinite fibres parallel to the cell axis `axis` (each given by its point on the mid-plane of
 the cell), from a random disk packing of the cross-section (keywords as [`random_spheres`](@ref); `fraction` is the fibre volume fraction).
+`avoid` takes only fibres parallel to `axis`, and the `centers` of `cluster` are points of the
+cross-section (2 coordinates, the two other axes in increasing order).
 """
 function random_fibres(cell::Cell{3}; axis=3, radius=nothing, fraction=nothing, n=nothing, min_gap=:auto,
                        face_gap=:auto, boundary=:periodic, avoid=nothing, cluster=nothing, rng=Random.default_rng(),
@@ -380,10 +419,15 @@ function random_fibres(cell::Cell{3}; axis=3, radius=nothing, fraction=nothing, 
     per = (cell.periodic[t[1]], cell.periodic[t[2]])
     # fibres to avoid become disks of the cross-section
     obs = Disk[]
-    for g in _flat_items(avoid)
+    for g0 in _flat_items(avoid)
+        g, sh = g0, (0.0, 0.0, 0.0)
+        while g isa Translate
+            sh = sh .+ g.shift; g = g.child
+        end
         g isa Fibre && abs(abs(g.direction[axis]) - 1) < 1e-12 ||
             throw(ArgumentError("random_fibres: avoid accepts only fibres parallel to axis $axis"))
-        push!(obs, Disk((g.point[t[1]], g.point[t[2]]), g.radius))
+        p = g.point .+ sh
+        push!(obs, Disk((p[t[1]], p[t[2]]), g.radius))
     end
     X, r = _packing(Val(2), "random_fibres", L, per, L[1] * L[2], radius, fraction, n,
                     min_gap, face_gap, boundary, rng, max_tries, strict; avoid=obs, cluster,
@@ -407,7 +451,11 @@ cell volume, as returned by the random packings (fibres span the cell along thei
 """
 function volume_fraction(items::AbstractVector{<:Geometry}, cell::Cell{D}) where {D}
     v = 0.0
-    for it in items
+    for it0 in items
+        it = it0
+        while it isa Translate
+            it = it.child
+        end
         if it isa Sphere && D == 3
             v += 4π * it.radius^3 / 3
         elseif it isa Disk && D == 2
@@ -425,7 +473,7 @@ function volume_fraction(items::AbstractVector{<:Geometry}, cell::Cell{D}) where
             a === nothing && throw(ArgumentError("volume_fraction: only fibres parallel to a cell axis are supported"))
             v += π * it.radius^2 * cell.size[a]
         else
-            throw(ArgumentError("volume_fraction(items, cell): items must be spheres or fibres (3D cell) or disks (2D cell), got $(nameof(typeof(it))) in a $(D)D cell"))
+            throw(ArgumentError("volume_fraction(items, cell): items must be spheres, ellipsoids, capsules, cylinders or axis-parallel fibres (3D cell), or disks or ellipses (2D cell), or translates of these; got $(nameof(typeof(it))) in a $(D)D cell"))
         end
     end
     return v / volume(cell)

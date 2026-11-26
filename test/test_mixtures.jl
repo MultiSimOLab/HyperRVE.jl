@@ -132,3 +132,85 @@ end
     s = @test_logs (:warn,) random_spheres(c; radius=0.1, n=40, avoid=big, rng=1, max_tries=2000, strict=false)
     @test 0 < length(s) < 40
 end
+
+@testset "mixtures review fixes" begin
+    c = unitcell()
+    # identical to the packings before avoid / cluster existed (values from main)
+    s = random_spheres(c; radius=0.08, n=12, rng=3)
+    @test sum(x.center[1] + 2x.center[2] + 3x.center[3] for x in s) ≈ 37.823832775211 atol = 1e-9
+    d = random_disks(Cell((2.0, 1.0)); radius=[0.1, 0.07, 0.05, 0.05], rng=7)
+    @test sum(x.center[1] + 2x.center[2] for x in d) ≈ 9.942318635057 atol = 1e-9
+    # share < 1 is not rejected by the local check meant for share = 1
+    s = random_spheres(c; radius=0.05, n=60, cluster=(n=1, radius=0.12, share=0.5), rng=1)
+    @test length(s) == 60
+    # fibre obstacles at any scale and position, along every axis
+    for (L, o) in ((1.0, (0.0, 0.0, 2.5e6)), (3e6, (0.0, 0.0, 0.0)), (1e-8, (1.0, 2.0, 3.0)))
+        cc = Cell((L, L, L); origin=o)
+        for ax in 1:3
+            e = ntuple(i -> i == ax ? 1.0 : 0.0, 3)
+            fb = Fibre(o .+ L .* (0.5, 0.5, 0.5) .+ 7L .* e, e, 0.2L)
+            ss = random_spheres(cc; radius=0.05L, n=20, avoid=fb, rng=ax)
+            @test cross_gap([fb], ss, cc) >= 0.005L * (1 - 1e-6)
+        end
+    end
+    # fibres of random_fibres as obstacles in a tiny cell
+    ct = Cell((1e-9, 1e-9, 1e-9))
+    ft = random_fibres(ct; radius=0.1e-9, n=3, rng=1)
+    st = random_spheres(ct; radius=0.05e-9, n=20, avoid=ft, rng=2)
+    @test cross_gap(ft, st, ct) >= 0.005e-9 * (1 - 1e-6)
+    # obstacle longer than the cell, and outside it
+    cap = Capsule((-1.3, 0.2, 0.4), (2.7, 0.9, 0.6), 0.08)
+    ss = random_spheres(c; radius=0.05, n=25, avoid=Translate(cap, (0.0, 3.0, 0.0)), rng=2)
+    g = Inf
+    for x in ss, k in Iterators.product(-4:4, -4:4, -4:4)
+        a = cap.p1 .+ (0.0, 3.0, 0.0) .+ k; ab = cap.p2 .- cap.p1
+        t = clamp(sum((x.center .- a) .* ab) / sum(abs2, ab), 0, 1)
+        g = min(g, sqrt(sum(abs2, x.center .- a .- t .* ab)) - x.radius - cap.radius)
+    end
+    @test g >= 0.005 - 1e-12
+    # ellipsoids: against their true surface
+    el = Ellipsoid((0.5, 0.5, 0.5), (0.3, 0.12, 0.08))
+    ss = random_spheres(c; radius=0.04, n=40, avoid=el, rng=4)
+    inside_e(p) = sum(((p .- el.center) ./ el.radii) .^ 2) < 1
+    @test !any(inside_e(x.center .+ x.radius .* u ./ sqrt(sum(abs2, u))) for x in ss
+               for u in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1), (1, 1, 1), (-1, 1, -1), (1, -1, 0)))
+    @test all(sum(((x.center .- el.center) ./ (el.radii .+ x.radius)) .^ 2) >= 1 - 1e-12 for x in ss)
+    # 2D ellipse
+    d2 = Cell((1.0, 1.0))
+    ee = Ellipse((0.5, 0.5), (0.3, 0.1))
+    dd = random_disks(d2; radius=0.03, n=30, avoid=ee, rng=3)
+    @test all(sum(((x.center .- ee.center) ./ (ee.radii .+ x.radius)) .^ 2) >= 1 - 1e-12 for x in dd)
+    # random_fibres: other axes, origin, translates, clusters
+    co = Cell((1.0, 1.2, 0.8); origin=(5.0, -2.0, 1.0))
+    f1 = random_fibres(co; axis=1, radius=0.08, n=4, rng=1)
+    f2 = random_fibres(co; axis=1, radius=0.05, n=8, avoid=[Translate(f, (0.0, 0.0, 0.0)) for f in f1], rng=2)
+    @test cross_gap(f1, f2, co) >= 0.005 - 1e-12
+    fc = random_fibres(co; axis=2, radius=0.03, n=8, cluster=(centers=[(5.5, 1.4)], radius=0.25), rng=3)
+    @test length(fc) == 8
+    # avoid with :inside, avoid together with cluster, shared rng
+    hard = random_spheres(c; radius=0.12, n=4, rng=1)
+    si = random_spheres(c; radius=0.05, n=15, avoid=hard, boundary=:inside, rng=2)
+    @test cross_gap(hard, si, c) >= 0.005 - 1e-12 && all(x -> all(0.05 .<= x.center .<= 0.95), si)
+    sc = random_spheres(c; radius=0.04, n=15, avoid=hard, cluster=(n=2, radius=0.25), rng=3)
+    @test cross_gap(hard, sc, c) >= 0.004 - 1e-12
+    r1 = HyperRVE.Random.Xoshiro(9); a1 = random_spheres(c; radius=0.1, n=4, rng=r1); b1 = random_spheres(c; radius=0.05, n=8, avoid=a1, rng=r1)
+    r2 = HyperRVE.Random.Xoshiro(9); a2 = random_spheres(c; radius=0.1, n=4, rng=r2); b2 = random_spheres(c; radius=0.05, n=8, avoid=a2, rng=r2)
+    @test a1 == a2 && b1 == b2
+    # forms of avoid
+    @test random_spheres(c; radius=0.05, n=5, avoid=(), rng=1) == random_spheres(c; radius=0.05, n=5, rng=1)
+    @test random_spheres(c; radius=0.05, n=5, avoid=[hard, Sphere[]], rng=1) == random_spheres(c; radius=0.05, n=5, avoid=hard, rng=1)
+    # clusters: :inside does not wrap; validations
+    ci = Cell((1.0, 1.0, 1.0))
+    sw = random_spheres(ci; radius=0.03, n=10, boundary=:inside, cluster=(centers=[(0.1, 0.1, 0.1)], radius=0.2), rng=1)
+    @test all(x -> sqrt(sum(abs2, x.center .- 0.1)) <= 0.2 + 1e-12, sw)
+    @test_throws ArgumentError random_spheres(c; radius=0.05, n=5, cluster=(n=2, radius=Inf), rng=1)
+    @test_throws ArgumentError random_spheres(c; radius=0.05, n=5, cluster=(n=2, radius=0.6), rng=1)
+    cnp = Cell((1.0, 1.0, 1.0); periodic=(true, true, false))
+    @test_throws ArgumentError random_spheres(cnp; radius=0.05, n=5, cluster=(centers=[(0.5, 0.5, 1.5)], radius=0.2), rng=1)
+    # failure message names the obstacles
+    err = try random_spheres(c; radius=0.1, n=40, avoid=Sphere((0.5, 0.5, 0.5), 0.45), rng=1, max_tries=500); catch e; e end
+    @test occursin("avoid", sprint(showerror, err))
+    # volume fractions of capsules, cylinders and translates
+    @test volume_fraction([Capsule((0.2, 0.5, 0.5), (0.6, 0.5, 0.5), 0.1)], c) ≈ π * 0.01 * 0.4 + 4π * 0.001 / 3
+    @test volume_fraction([Translate(Cylinder((0.5, 0.5, 0.1), (0.0, 0.0, 0.5), 0.1), (0.1, 0.0, 0.0))], c) ≈ π * 0.01 * 0.5
+end
