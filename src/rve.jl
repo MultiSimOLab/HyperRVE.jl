@@ -9,6 +9,14 @@ Description of a representative volume element: a [`Cell`](@ref) filled with a b
 phase called `matrix` (or nothing, `matrix = nothing`, for porous media and lattices) and the
 given [`Phase`](@ref)s. Where phases overlap, the phase listed later wins
 (`overlaps = :paint`); `overlaps = :error` makes any overlap an error.
+
+`tiling = n` (an integer or one per direction) meshes a supercell made of `n` copies of the
+cell along each direction: the items of the phases are given for one cell and translated by
+every cell offset of the supercell. Along periodic directions the supercell is periodic.
+Along non-periodic directions nothing wraps around: an item is cut only by the outer faces of
+the supercell, so an item that sticks out of the unit cell (or lies outside it) appears,
+whole, in the neighbouring copy where it falls inside the supercell. See also
+[`supercell`](@ref).
 """
 struct RVE{D}
     cell::Cell{D}
@@ -37,7 +45,6 @@ function RVE(cell::Cell{D}, phases; matrix=:matrix, tiling=1, overlaps=:paint) w
         (length(tiling) == D && all(x -> x isa Integer, tiling) ? ntuple(i -> Int(tiling[i]), D) :
          throw(ArgumentError("tiling must be an integer or $D integers")))
     all(>=(1), t) || throw(ArgumentError("tiling must be >= 1, got $t"))
-    all(==(1), t) || throw(ArgumentError("tiling (supercells) is not implemented yet"))
     overlaps in (:paint, :error) || throw(ArgumentError("overlaps must be :paint or :error, got $(repr(overlaps))"))
     for p in ps, g in p.items
         if isunbounded(g) && invariant_axis(g) == 0
@@ -66,11 +73,17 @@ end
 """
     supercell(rve, n)
 
-The same RVE repeated `n` times (integer or one integer per direction).
+The same RVE repeated `n` times along each direction (an integer or one integer per
+direction), multiplying any existing tiling.
 """
-supercell(rve::RVE{D}, n) where {D} =
-    RVE(rve.cell, rve.phases; matrix=rve.matrix === nothing ? nothing : rve.matrix,
-        tiling=rve.tiling .* (n isa Integer ? ntuple(_ -> Int(n), D) : Tuple(n)), overlaps=rve.overlaps)
+function supercell(rve::RVE{D}, n) where {D}
+    m = n isa Integer ? ntuple(_ -> Int(n), D) :
+        (length(n) == D && all(x -> x isa Integer, n) ? ntuple(i -> Int(n[i]), D) :
+         throw(ArgumentError("supercell: n must be an integer or $D integers")))
+    all(>=(1), m) || throw(ArgumentError("supercell: n must be >= 1, got $m"))
+    # the RVE was validated on construction: rebuild it directly (no repeated warnings)
+    return RVE{D}(rve.cell, rve.phases, rve.matrix, rve.tiling .* m, rve.overlaps)
+end
 
 domain_origin(rve::RVE) = rve.cell.origin
 domain_size(rve::RVE) = rve.tiling .* rve.cell.size

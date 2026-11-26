@@ -60,6 +60,8 @@ rve = RVE(cell, [Phase(:fibre, Fibre(cellpoint(cell, (0, 0.5, 0)), (1, 0, 0), 0.
 res = generate(rve; h = 0.1, output = "RVE.msh")
 ```
 
+A supercell repeats the cell: `generate(supercell(rve, (3, 3, 3)); h = 0.1)`.
+
 `generate` opens and closes Gmsh by itself and returns plain Julia data (phase volumes and
 fractions, physical groups, mesh statistics, periodicity checks). Opposite faces of periodic
 directions are meshed identically (`gmsh.model.mesh.setPeriodic`, MSH 4.1 periodic links,

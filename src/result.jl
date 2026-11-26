@@ -80,7 +80,9 @@ end
     volume(res, name)   volume(res)
 
 Volume (area in 2D) of a phase, or of the whole meshed domain, in the units of the cell,
-computed from the exact geometry.
+computed by OpenCASCADE from the exact geometry. For pieces bounded by B-spline surfaces
+(ellipsoids and non-uniformly scaled bodies cut by a cell face) the OCC integration is only
+accurate to about 1e-2 relative; analytic bodies are accurate to round-off.
 """
 volume(r::RVEMesh, name::Union{Symbol,AbstractString}) = r[name].volume
 volume(r::RVEMesh) = volume(r.rve)
