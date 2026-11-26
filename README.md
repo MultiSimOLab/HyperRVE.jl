@@ -94,6 +94,7 @@ groups
 | `corners`, `boundary` | 0 / 2, 1, 0 | the 8 corners (7), the whole cell surface (8) |
 | `edge_ymin_zmin`, ... | 1, 0 | the 12 cell edges |
 | `corner_xmin_ymin_zmin`, ... | 0 | each corner |
+| `interface_<a>_<b>`, `interfaces` | 2, 1, 0 | interfaces between phases `a` and `b` (`void` without matrix), and their union |
 
 In 2D the sides `xmin`, `xmax`, `ymin`, `ymax` are curves and points, the corners are
 `corner_xmin_ymin`, ... and there are no `edge_*` groups. In periodic directions, readers

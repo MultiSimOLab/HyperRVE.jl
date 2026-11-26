@@ -20,6 +20,7 @@ export Phase, RVE, supercell
 export MeshOptions, InterfaceRefinement
 export generate, RVEMesh, write_mesh, view_mesh, close_gmsh, PeriodicityError
 export volume, volume_fraction, volume_fractions, phase_names, group_names, group_tag, quality_report
+export interface_names, interface_area, interface_tag
 
 include("vectors.jl")
 include("cell.jl")
