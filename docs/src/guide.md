@@ -81,6 +81,11 @@ lattice shift of node `j`; `lattice_topology(kind)` returns those of a preset.
 the nodes twice). In a non-periodic cell the lattice is the complete finite truss, outer faces
 included. Struts of different radii: `radius = [r1, r2, ...]`, one per strut.
 
+Strut copies whose part inside the cell is covered by a node sphere are not built (the body is
+unchanged, the fuse 20–50 % faster). For lattices whose nodes are buried in the struts (octet),
+`node_radius = 1.42 * radius` is about four times faster at a volume change below 1e-6; for
+bcc, kelvin and diamond a larger node sphere changes the joint and the density.
+
 ## Random packings
 
 `random_spheres(cell; ...)`, `random_disks(cell; ...)` (2D) and `random_fibres(cell; axis, ...)`

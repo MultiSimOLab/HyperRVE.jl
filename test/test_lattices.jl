@@ -119,3 +119,46 @@ end
     v = volume_fraction(geo(RVE(blk, Phase(:l, lattice(blk, :cubic; radius=0.08); fuse=true); matrix=nothing)), :l)
     @test v ≈ relative_density(:cubic, 0.08) rtol = 1e-6
 end
+
+@testset "pruning of covered strut copies" begin
+    slab = RVEs._cylinder_slab
+    lo, hi = (0.0, 0.0, 0.0), (1.0, 1.0, 1.0)
+    @test slab((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.5, 0.05, lo, hi, 1e-9) == (0.0, 0.0)          # leaves at a corner
+    t = slab((0.0, 0.0, 0.0), (1.0, -1.0, 0.0) ./ sqrt(2), 0.5, 0.05, lo, hi, 1e-9)
+    @test t[1] == 0
+    @test t[2] ≈ 0.05 atol = 1e-8                     # a sliver of length r
+    @test all(slab((0.3, 0.3, 0.3), (0.0, 0.0, 1.0), 0.4, 0.05, lo, hi, 1e-9) .≈ (0.0, 0.4))       # inside
+    @test slab((3.0, 3.0, 3.0), (0.0, 0.0, 1.0), 0.4, 0.05, lo, hi, 1e-9) === nothing                # far away
+    # brute force: every sampled point of the cylinder inside the box has its axial coordinate in the slab
+    rng = RVEs.Random.Xoshiro(1)
+    for _ in 1:20
+        a = Tuple(2 .* rand(rng, 3) .- 0.5); d = Tuple(randn(rng, 3)); d = d ./ sqrt(sum(abs2, d))
+        L, r = 0.2 + rand(rng), 0.02 + 0.1rand(rng)
+        sl = slab(a, d, L, r, lo, hi, 1e-9)
+        for _ in 1:400
+            tt = L * rand(rng); w = Tuple(randn(rng, 3)); w = w .- sum(w .* d) .* d; w = w ./ sqrt(sum(abs2, w)) .* (r * sqrt(rand(rng)))
+            q = a .+ tt .* d .+ w
+            if all(0 .<= q .<= 1)
+                @test sl !== nothing && sl[1] - 1e-6 <= tt <= sl[2] + 1e-6
+            end
+        end
+    end
+    # exactness: the same body with and without pruning
+    c = unitcell()
+    for (k, x) in ((:bcc, 0.08), (:cubic, 0.1))
+        v = map((true, false)) do p
+            RVEs._PRUNE[] = p
+            try
+                volume_fraction(geo(RVE(c, Phase(:l, lattice(c, k; radius=x); fuse=true); matrix=nothing)), :l)
+            finally
+                RVEs._PRUNE[] = true
+            end
+        end
+        @test v[1] ≈ v[2] rtol = 1e-9
+    end
+    # a free direction and no node spheres
+    cf = Cell((1.0, 1.0, 1.0); periodic=(true, true, false))
+    @test volume_fraction(geo(RVE(cf, Phase(:l, lattice(cf, :bcc; radius=0.08); fuse=true); matrix=nothing)), :l) ≈
+          relative_density(:bcc, 0.08) rtol = 1e-3
+    @test volume_fraction(geo(RVE(c, Phase(:l, lattice(c, :cubic; radius=0.1, node_radius=nothing); fuse=true); matrix=nothing)), :l) > 0
+end
