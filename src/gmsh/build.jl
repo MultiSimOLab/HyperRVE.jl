@@ -33,7 +33,8 @@ function build!(g::Fibre, ctx::BuildContext)
     return DimTag[(3, gmsh.model.occ.addCylinder((p0 .- H .* d)..., (2H .* d)..., g.radius))]
 end
 
-# built along z from the origin (seams aligned, all surfaces analytic), then moved
+# the face bands of random_capsules (_capsule_bands_ok) assume this construction: the cap
+# spheres have their poles along z and their seams at the heights of p1 and p2
 function build!(g::Capsule, ::BuildContext)
     # built in place (cylinder along p2 - p1 plus a sphere at each end): a capsule built along z
     # and then rotated gives OCC unions with invalid solids when capsules form closed loops
