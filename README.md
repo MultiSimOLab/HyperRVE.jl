@@ -25,8 +25,8 @@ can be read directly with GridapGmsh.
 <td align="center"><img src="docs/imgs/gallery/mre_chains.png" width="180"><br>particle chains (MRE)</td>
 <td align="center"><img src="docs/imgs/gallery/octet.png" width="180"><br>octet lattice</td>
 <td align="center"><img src="docs/imgs/gallery/polycrystal.png" width="180"><br>Voronoi polycrystal</td>
-<td align="center"><img src="docs/imgs/gallery/closed_foam.png" width="180"><br>closed-cell foam</td>
-<td align="center"><img src="docs/imgs/gallery/kelvin.png" width="180"><br>Kelvin open foam</td>
+<td align="center"><img src="docs/imgs/gallery/closed_foam.png" width="180"><br>closed-cell foam (cut open)</td>
+<td align="center"><img src="docs/imgs/gallery/kelvin.png" width="180"><br>Kelvin open foam (2×2×2)</td>
 </tr>
 <tr>
 <td align="center"><img src="docs/imgs/gallery/random.png" width="180"><br>random spheres</td>
@@ -45,7 +45,7 @@ particle_chains(cell; axis = 3, radius = 0.08, gap = 0.02, fraction = 0.12, rng 
 lattice(cell, :octet; density = 0.15)                                                  # strut lattice
 grain_phases(voronoi(cell; n = 20, lloyd = 2, rng = 1))                                # polycrystal
 t = voronoi(cell; n = 8, rng = 1); pores(t; wall = wall_thickness(t, 0.15))            # closed foam
-foam_struts(voronoi(cell; seeds = [(0, 0, 0), (0.5, 0.5, 0.5)]); radius = 0.04)        # Kelvin foam
+foam_struts(voronoi(cell; seeds = [(0, 0, 0), (0.5, 0.5, 0.5)]); radius = 0.035)       # Kelvin foam
 random_spheres(cell; radius = 0.1, fraction = 0.2, rng = 3)                            # random packing
 ```
 
