@@ -117,7 +117,10 @@ Fibre(; point, direction, radius) = Fibre(point, direction, radius)
     Capsule(; center, direction, length, radius)
 
 Cylinder of axis `p1 → p2` closed by two hemispherical caps of the same radius (`length` is
-the distance between the cap centres). A short fibre or a hand-made strut.
+the distance between the cap centres). A short fibre or a hand-made strut. For strut lattices
+prefer cylinders plus one sphere per node: several
+capsules ending at the same point give coincident spherical caps, a degenerate case for
+OpenCASCADE booleans.
 """
 struct Capsule <: Geometry{3}
     p1::Vec{3}

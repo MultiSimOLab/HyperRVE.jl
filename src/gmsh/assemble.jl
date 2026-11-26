@@ -78,24 +78,34 @@ end
 # Identity of a placed primitive, to drop exact duplicates before a fuse (coincident bodies
 # are the pathological case of OCC booleans).
 _placement_key(::Geometry, shift) = nothing
-_placement_key(g::Sphere, s) = (:sphere, round.(g.center .+ s; digits=9), round(g.radius; digits=12))
-_placement_key(g::Disk, s) = (:disk, round.(g.center .+ s; digits=9), round(g.radius; digits=12))
+_rk(x) = round.(x; digits=9) .+ 0.0          # + 0.0 turns -0.0 into 0.0 (isequal in a Set)
+_placement_key(g::Sphere, s) = (:sphere, _rk(g.center .+ s), round(g.radius; digits=12))
+_placement_key(g::Disk, s) = (:disk, _rk(g.center .+ s), round(g.radius; digits=12))
 function _placement_key(g::Union{Cylinder,Capsule}, s)
     p, q = g isa Cylinder ? (g.base, g.base .+ g.axis) : (g.p1, g.p2)
-    a, b = round.(p .+ s; digits=9), round.(q .+ s; digits=9)
+    a, b = _rk(p .+ s), _rk(q .+ s)
     return (nameof(typeof(g)), min(a, b), max(a, b), round(g.radius; digits=12))
 end
 
+_mass(tags) = sum(gmsh.model.occ.getMass(d, t) for (d, t) in tags; init=0.0)
+
 function _fuse_or_error(objs::Vector{DimTag}, D, name)
     length(objs) <= 1 && return objs
-    try
+    vin = _mass(objs)
+    body = try
         out, _ = gmsh.model.occ.fuse(objs[1:1], objs[2:end])
-        return _nonempty(_ents(out, D), "Fuse")
+        _nonempty(_ents(out, D), "Fuse")
     catch e
         e isa ErrorException || rethrow()
         error("phase $name: OCC could not fuse the items ($(e.msg)); for strut lattices try " *
               "node_radius = 1.05 * radius, or fuse = false")
     end
+    # a union cannot be larger than the sum of its parts: OCC returns invalid bodies for some
+    # degenerate inputs (e.g. coincident spherical caps of capsules ending at cell corners)
+    _mass(body) <= vin * (1 + 1e-6) ||
+        error("phase $name: OCC returned an invalid fused body (volume larger than the sum of the items); " *
+              "check for coincident or tangent items, or use fuse = false")
+    return body
 end
 
 """
@@ -104,16 +114,24 @@ connected component. For a supercell periodic (or not tiled) in every direction,
 fused, clipped to the cell and tiled (the same set, much cheaper than fusing every copy).
 """
 function _fused_tools!(rve::RVE{D}, ph::Phase{D}, frame, ctx, lo, ℓ, n, tol) where {D}
-    occ = gmsh.model.occ
     per = rve.cell.periodic
     unit = any(>(1), n) && all(d -> per[d] || n[d] == 1, 1:D)
-    m = unit ? ntuple(_ -> 1, D) : n
+    if unit
+        body = _fused_unit_path!(rve, ph, frame, ctx, lo, ℓ, n, tol)
+        body === nothing || return body
+    end
+    return _fused_copies!(rve, ph, frame, ctx, lo, ℓ, n, tol)
+end
+
+"All items and their images for an `m`-tiled domain, duplicates dropped, fused."
+function _fused_copies!(rve::RVE{D}, ph::Phase{D}, frame, ctx, lo, ℓ, m, tol) where {D}
+    occ = gmsh.model.occ
     copies = DimTag[]
     seen = Set{Any}()
     for (ii, item) in enumerate(ph.items)
         g = to_frame(frame, item)
-        for (k, c) in _item_copies!(g, ctx, lo, ℓ, m, per, tol, "item $ii of phase $(ph.name)")
-            key = _placement_key(g, _pad3(k .* ℓ))
+        for (k, c) in _item_copies!(g, ctx, lo, ℓ, m, rve.cell.periodic, tol, "item $ii of phase $(ph.name)")
+            key = _placement_key(g, k .* ℓ)
             if key !== nothing && key in seen
                 occ.remove(c, true)
             else
@@ -123,11 +141,24 @@ function _fused_tools!(rve::RVE{D}, ph::Phase{D}, frame, ctx, lo, ℓ, n, tol) w
         end
     end
     isempty(copies) && return copies
-    body = _fuse_or_error(copies, D, ph.name)
-    unit || return body
+    return _fuse_or_error(copies, D, ph.name)
+end
+
+"""
+Fuse one cell, clip it to the cell and tile it. Returns `nothing` (after removing what it
+built) if OCC cannot fuse the tiles, so that the caller falls back to fusing every copy.
+"""
+function _fused_unit_path!(rve::RVE{D}, ph::Phase{D}, frame, ctx, lo, ℓ, n, tol) where {D}
+    occ = gmsh.model.occ
+    body = _fused_copies!(rve, ph, frame, ctx, lo, ℓ, ntuple(_ -> 1, D), tol)
+    isempty(body) && return body
     cellbox = D == 3 ? occ.addBox(lo..., ℓ...) : occ.addRectangle(lo[1], lo[2], 0.0, ℓ...)
-    out, _ = occ.intersect(body, [(D, cellbox)])
-    body = _ents(out, D)
+    body = try
+        _ents(occ.intersect(body, [(D, cellbox)])[1], D)
+    catch e
+        e isa ErrorException || rethrow()
+        error("phase $(ph.name): OCC could not clip the fused cell ($(e.msg)); use fuse = false")
+    end
     isempty(body) && return body
     tiles = copy(body)
     for k in Iterators.product(ntuple(d -> 0:n[d]-1, D)...)
@@ -136,19 +167,18 @@ function _fused_tools!(rve::RVE{D}, ph::Phase{D}, frame, ctx, lo, ℓ, n, tol) w
         occ.translate(c, _lift3(k .* ℓ)...)
         append!(tiles, c)
     end
-    # tiles touch only on cell planes; if OCC cannot fuse them, keep them separate (the mesh
-    # then keeps planar sections on the internal cell boundaries, same phase)
+    vin = _mass(tiles)
     try
         out, _ = occ.fuse(tiles[1:1], tiles[2:end])
-        return _ents(out, D)
+        fused = _ents(out, D)
+        _mass(fused) <= vin * (1 + 1e-6) && return fused
+        occ.remove(fused, true)
     catch e
         e isa ErrorException || rethrow()
-        return tiles
+        occ.remove(filter(t -> t in Set(occ.getEntities(D)), tiles), true)
     end
+    return nothing
 end
-
-_pad3(x::NTuple{2,Float64}) = (x[1], x[2])
-_pad3(x::NTuple{3,Float64}) = x
 
 function assemble!(rve::RVE{D}, frame::Frame{D}) where {D}
     occ = gmsh.model.occ

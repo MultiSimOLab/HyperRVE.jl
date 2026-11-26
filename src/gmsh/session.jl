@@ -11,7 +11,7 @@ const _SESSION_OPTIONS = ("General.Terminal", "Geometry.OCCBoundsUseStl", "Mesh.
                           "Mesh.MshFileVersion", "Mesh.SaveAll", "Mesh.Binary", "Mesh.MeshSizeMin",
                           "Mesh.MeshSizeMax", "General.NumThreads", "Mesh.Algorithm", "Mesh.Algorithm3D",
                           "Mesh.Optimize", "Mesh.OptimizeNetgen", "Mesh.ElementOrder", "Mesh.SecondOrderLinear",
-                          "Mesh.HighOrderOptimize", "Mesh.HighOrderSavePeriodic")
+                          "Mesh.HighOrderOptimize", "Mesh.HighOrderSavePeriodic", "Geometry.OCCUnionUnify")
 
 function _unique_model_name(name)
     names = gmsh.model.list()
@@ -40,6 +40,7 @@ function _with_session(f, name::AbstractString; keep_open::Bool, verbosity::Int)
         gmsh.option.setNumber("Mesh.Binary", 0)
         gmsh.option.setNumber("General.NumThreads", 1)   # Param size fields are not thread-safe
         gmsh.option.setNumber("Mesh.HighOrderSavePeriodic", 1)   # write mid-node pairs in $Periodic
+        gmsh.option.setNumber("Geometry.OCCUnionUnify", 1)       # merge coplanar faces after fuse
         gmsh.model.add(model)
         r = f(model)
         ok = true

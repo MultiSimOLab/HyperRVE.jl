@@ -67,11 +67,11 @@ function RVE(cell::Cell{D}, phases; matrix=:matrix, tiling=1, overlaps=:paint) w
 end
 
 function _warn_long_cylinder(cell, p, g)
-    g isa Cylinder || return nothing
+    g isa Union{Cylinder,Capsule} || return nothing
+    ax = g isa Cylinder ? g.axis : g.p2 .- g.p1
     for d in 1:3
-        if cell.periodic[d] && abs(abs(g.axis[d]) - _norm(g.axis)) < 1e-12 * _norm(g.axis) &&
-           _norm(g.axis) > cell.size[d]
-            @warn "phase $(p.name): a Cylinder longer than the periodic cell along axis $d overlaps " *
+        if cell.periodic[d] && abs(abs(ax[d]) - _norm(ax)) < 1e-12 * _norm(ax) && _norm(ax) > cell.size[d]
+            @warn "phase $(p.name): a $(nameof(typeof(g))) longer than the periodic cell along axis $d overlaps " *
                   "its own periodic image; use Fibre(point, direction, radius) instead"
         end
     end
