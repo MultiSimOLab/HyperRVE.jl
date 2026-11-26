@@ -18,11 +18,11 @@ function tessellation_edges(t::Tessellation{3})
 end
 
 """
-    foam_struts(t; radius, node_radius = :auto, min_length = 2radius) -> Vector{Geometry{3}}
+    foam_struts(t; radius, node_radius = :auto, min_length = nothing) -> Vector{Geometry{3}}
 
 Open-cell foam: the edges of a fully periodic tessellation as struts (one `Cylinder` per edge
 and one `Sphere` per vertex, see [`struts`](@ref)). Edges shorter than `min_length` are
-collapsed first (their vertices merged), since a strut shorter than its diameter is buried in
+collapsed first (their vertices merged; `min_length = nothing` means `2 radius`), since a strut shorter than its diameter is buried in
 the node spheres. Use in a fused phase without matrix:
 `RVE(cell, Phase(:foam, foam_struts(t; radius = 0.02); fuse = true); matrix = nothing)`.
 Practical for about 5–20 cells (the fused union of the struts dominates the cost).
@@ -32,6 +32,8 @@ function foam_struts(t::Tessellation{3}; radius, node_radius=:auto, min_length=n
                                            "(build it with voronoi(cell; ..., periodic = true))"))
     r = _positive(radius, "foam_struts radius")
     lmin = min_length === nothing ? 2r : Float64(min_length)
+    lmin > 0.25 * minimum(t.cell.size) &&
+        @warn "foam_struts: min_length = $lmin is large compared with the cell; most vertices will be merged"
     nodes, edges = tessellation_edges(t)
     L = t.cell.size
     # union–find over vertices; T(v) is the lattice offset of the copy of v that belongs to the
@@ -118,6 +120,26 @@ end
 _poly_volume(P::_Poly3) = abs(_polyhedron_volume(_indexed(P, 1e-12)...))
 _poly_volume(P::_Poly2) = abs(_polygon_area(P.pts))
 
+# pieces of a body (cell-local clipping polyhedron/polygon) inside the cell: along directions
+# where the tessellation is periodic but the cell is not, its translates clipped to the cell
+function _cell_pieces(t::Tessellation{D}, P) where {D}
+    cut = [d for d in 1:D if t.periodic[d] && !t.cell.periodic[d]]
+    isempty(cut) && return [P]
+    L = t.cell.size
+    eps = 1e-11 * maximum(L)
+    out = Any[]
+    for s in Iterators.product(ntuple(d -> d in cut ? (-1:1) : (0:0), D)...)
+        Q = D == 3 ? _Poly3([[p .+ s .* L for p in f] for f in P.faces], copy(P.labels)) :
+                     _Poly2([p .+ s .* L for p in P.pts], copy(P.labels))
+        for d in cut, (n, c) in ((ntuple(k -> k == d ? 1.0 : 0.0, D), L[d]), (ntuple(k -> k == d ? -1.0 : 0.0, D), 0.0))
+            _clip!(Q, n, c, (0, ntuple(_ -> 0, D)), eps)
+        end
+        (D == 3 ? length(Q.faces) >= 4 : length(Q.pts) >= 3) || continue
+        _poly_volume(Q) > 1e-12 * prod(L) && push!(out, Q)
+    end
+    return out
+end
+
 """
     pores(t; wall) -> Vector{Polyhedron} (3D) or Vector{Polygon} (2D)
 
@@ -125,24 +147,34 @@ The grains shrunk by `wall / 2` on every face: the pores of a closed-cell foam w
 (the rest of the cell) have thickness `wall`. Grains that vanish are skipped with a warning.
 Use `RVE(cell, Phase(:pores, pores(t; wall); void = true); matrix = :walls)` for empty pores,
 or without `void` for a two-phase material. [`wall_thickness`](@ref) gives the wall for a
-relative density.
+relative density. To refine the pore surfaces, make the walls an explicit phase:
+`[Phase(:walls, Box(cell.origin, cell.size); refine = w / 2), Phase(:pores, pores(t; wall = w); void = true)]`
+with `matrix = nothing`. At free faces of the cell the wall is `wall / 2` thick.
 """
 function pores(t::Tessellation{D}; wall) where {D}
     w = Float64(wall)
     w >= 0 || throw(ArgumentError("pores: wall must be >= 0"))
     out = D == 3 ? Polyhedron[] : Polygon[]
     lost = 0
+    V = prod(t.cell.size)
     for i in eachindex(t.loops)
         P = _shrunk(t, i, w / 2)
-        if P === nothing
-            lost += 1
+        if P === nothing || _poly_volume(P) <= 1e-9 * V
+            lost += 1                   # vanished (or too small to be a valid body)
             continue
         end
-        if D == 3
-            v, f = _indexed(P, 1e-9 * maximum(t.cell.size))
-            push!(out, Polyhedron([t.cell.origin .+ p for p in v], f))
-        else
-            push!(out, Polygon([t.cell.origin .+ p for p in P.pts]))
+        for Q in _cell_pieces(t, P)
+            try
+                if D == 3
+                    v, f = _indexed(Q, 1e-9 * maximum(t.cell.size))
+                    push!(out, Polyhedron([t.cell.origin .+ p for p in v], f))
+                else
+                    push!(out, Polygon([t.cell.origin .+ p for p in Q.pts]))
+                end
+            catch e
+                e isa ArgumentError || rethrow()
+                lost += 1               # a sliver of a nearly vanished pore
+            end
         end
     end
     lost > 0 && @warn "pores: $lost grains vanish with wall = $w"
@@ -159,7 +191,8 @@ volumes).
 function wall_thickness(t::Tessellation{D}, density::Real) where {D}
     0 < density < 1 || throw(ArgumentError("wall_thickness: density must be in (0, 1)"))
     V = prod(t.cell.size)
-    ρ(w) = 1 - sum((P = _shrunk(t, i, w / 2); P === nothing ? 0.0 : _poly_volume(P)) for i in eachindex(t.loops)) / V
+    pv(P) = P === nothing ? 0.0 : sum(_poly_volume, _cell_pieces(t, P); init=0.0)
+    ρ(w) = 1 - sum(pv(_shrunk(t, i, w / 2)) for i in eachindex(t.loops)) / V
     lo, hi = 0.0, minimum(t.cell.size)
     for _ in 1:200
         m = (lo + hi) / 2

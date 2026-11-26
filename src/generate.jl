@@ -64,7 +64,8 @@ generate(f::Function, rve::RVE; kwargs...) = _generate(f, rve; kwargs...)
 function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), output=nothing,
                    geometry_only::Bool=false, check_periodicity::Bool=true, view::Bool=false,
                    keep_open::Bool=false, verbosity::Integer=0, name::AbstractString="RVE",
-                   interfaces::Union{Bool,Symbol}=true) where {D}
+                   interfaces=true) where {D}
+    (interfaces === true || interfaces === false || interfaces === :union) || throw(ArgumentError("interfaces must be true, false or :union, got $(repr(interfaces))"))
     if h !== nothing
         mesh.h === nothing || throw(ArgumentError("give the global size either as h or as mesh.h, not both"))
         mesh = _with(mesh; h=_positive(h, "h"))

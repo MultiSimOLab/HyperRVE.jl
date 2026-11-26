@@ -140,7 +140,7 @@ interface_area(r::RVEMesh, a, b) = _interface(r, a, b).area
 """    interface_tag(res, a, b)  Physical tag of the interface group between phases `a` and `b` (same in every dimension)."""
 function interface_tag(r::RVEMesh, a, b)
     i = _interface(r, a, b)
-    i.tag == 0 && error("interface groups were not created (generate(...; interfaces = false))")
+    i.tag == 0 && error("the interface group between $a and $b was not created (generate(...; interfaces = false or :union))")
     return i.tag
 end
 

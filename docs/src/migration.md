@@ -1,6 +1,6 @@
 # Migrating from the 2024 API
 
-Version 2 replaces the whole public API. The table maps every old call to its replacement.
+version 0.2 replaces the whole public API. The table maps every old call to its replacement.
 
 | 2024 API | 0.2 |
 |----|----|

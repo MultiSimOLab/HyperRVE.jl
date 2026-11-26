@@ -137,7 +137,8 @@ function verify_periodicity(rve::RVE{D}, frame::Frame{D}) where {D}
         end
         # with a matrix the cell faces always exist: finding no nodes means they were not
         # recognised, which must not pass silently
-        rve.matrix !== nothing && size(pmin, 2) == 0 && (ok = false)
+        # (unless a void phase may have removed them)
+        rve.matrix !== nothing && !any(p -> p.void, rve.phases) && size(pmin, 2) == 0 && (ok = false)
         push!(checks, PeriodicityCheck(d, size(pmin, 2), maxerr / lref, ok))
         ok || throw(PeriodicityError(d, "the meshes of $(_face_name(d, 1)) and $(_face_name(d, 2)) do not " *
                                         "match ($(size(pmin, 2)) vs $(size(pmax, 2)) nodes, max mismatch " *

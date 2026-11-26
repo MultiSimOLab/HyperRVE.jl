@@ -40,6 +40,8 @@ function RVE(cell::Cell{D}, phases; matrix=:matrix, tiling=1, overlaps=:paint) w
         _isreserved(n) && throw(ArgumentError("phase name $(repr(n)) is reserved for boundary groups"))
     end
     allunique(names) || throw(ArgumentError("phase names must be unique, got $names"))
+    m === nothing && !isempty(ps) && all(p -> p.void, ps) &&
+        throw(ArgumentError("every phase is void and there is no matrix: nothing would be meshed"))
     # interface group names interface_<a>_<b> must be unambiguous (names may contain '_')
     ifn = [names; "void"]
     seen = Dict{String,Tuple{String,String}}()
