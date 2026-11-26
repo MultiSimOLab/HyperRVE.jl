@@ -17,5 +17,6 @@ mesh next to the script.
 | `10_strut_lattices.jl` | strut lattices: presets by density, in a matrix, custom topology, finite block |
 | `11_random_packings.jl` | random spheres (target fraction, size distribution), aligned fibres, disks |
 | `12_voronoi_polycrystal.jl` | periodic Voronoi polycrystal, grain groups, 2D tessellation |
+| `13_foams_and_voids.jl` | closed-cell foam at a density, open-cell foam, void phases |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.

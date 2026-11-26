@@ -48,7 +48,7 @@ _refinement(x) = throw(ArgumentError("refine must be a size, true/false, a Named
                                      "InterfaceRefinement, got $(repr(x))"))
 
 """
-    Phase(name, geometry; h = nothing, refine = nothing, fuse = false)
+    Phase(name, geometry; h = nothing, refine = nothing, fuse = false, void = false)
 
 A named material phase. `geometry` is one [`Geometry`](@ref) or a collection of them (the
 items of the phase). By default items are not fused: where items of the same phase overlap
@@ -61,6 +61,10 @@ cell is completed with its periodic images.
   meshing, so that no internal surfaces remain where items overlap (strut lattices, overlapping
   particles). Refinement by `level` then uses the smallest item of the phase, and
   `overlaps = :error` only compares different phases (items of a fused phase may overlap).
+- `void`: the phase is empty space: what it covers (painted over the earlier phases and the
+  matrix) is removed from the mesh, and its surfaces become `interface_<a>_void` groups. Pores,
+  holes and closed-cell foams: `Phase(:pores, items; void = true)`. A void phase has no `h` or
+  `refine`, and is not listed in the result.
 - `refine`: refinement on the interfaces of the phase: a size (`refine = 0.02`), `true`
   (the rule of the 2024 API), a NamedTuple of [`InterfaceRefinement`](@ref) keywords or an
   `InterfaceRefinement`.
@@ -71,17 +75,20 @@ struct Phase{D}
     h::Union{Nothing,Float64}
     refine::Union{Nothing,InterfaceRefinement}
     fuse::Bool
+    void::Bool
 end
-function Phase(name::Union{Symbol,AbstractString}, geometry; h=nothing, refine=nothing, fuse::Bool=false)
+function Phase(name::Union{Symbol,AbstractString}, geometry; h=nothing, refine=nothing, fuse::Bool=false, void::Bool=false)
     n = String(name)
     (isempty(n) || any(isspace, n)) && throw(ArgumentError("phase name must be non-empty and without spaces, got $(repr(n))"))
     items = geometry isa Geometry ? Geometry[geometry] : collect(geometry)
     v = _geometry_vector(items, "Phase $n")
     hp = h === nothing ? nothing : _positive(h, "Phase $n h")
-    return Phase{_dim(v[1])}(n, v, hp, _refinement(refine), fuse)
+    void && (hp !== nothing || refine !== nothing) &&
+        throw(ArgumentError("Phase $n: a void phase has no mesh; give h or refine to the phases around it"))
+    return Phase{_dim(v[1])}(n, v, hp, _refinement(refine), fuse, void)
 end
 
 Base.show(io::IO, p::Phase{D}) where {D} =
     print(io, "Phase{$D}(:", p.name, ", ", length(p.items), length(p.items) == 1 ? " item" : " items",
           p.h === nothing ? "" : ", h = $(p.h)", p.refine === nothing ? "" : ", refined",
-          p.fuse ? ", fused" : "", ")")
+          p.fuse ? ", fused" : "", p.void ? ", void" : "", ")")

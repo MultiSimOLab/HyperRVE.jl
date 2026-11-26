@@ -1,7 +1,7 @@
 name = "RVEs"
 uuid = "1c830c4e-91c4-4b43-9943-9e359d57f5e1"
 authors = ["MultiSimO Lab"]
-version = "2.0.0-DEV"
+version = "0.2.0-DEV"
 
 [deps]
 Gmsh = "705231aa-382f-11e9-3f0c-b7cb4346fdeb"

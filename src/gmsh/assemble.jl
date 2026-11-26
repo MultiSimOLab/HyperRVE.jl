@@ -250,6 +250,14 @@ function assemble!(rve::RVE{D}, frame::Frame{D}) where {D}
     if rve.matrix === nothing && !isempty(matrix_pieces)
         occ.remove([(Int32(D), t) for t in matrix_pieces], true)
     end
+    # void phases: their pieces are removed like the matrix under matrix = nothing
+    void_pieces = Int32[t for (t, p) in piece_phase if rve.phases[p].void]
+    if !isempty(void_pieces)
+        occ.remove([(Int32(D), t) for t in void_pieces], true)
+        for t in void_pieces
+            delete!(piece_phase, t); delete!(piece_item, t)
+        end
+    end
     occ.synchronize()
 
     names = String[]
@@ -262,6 +270,7 @@ function assemble!(rve::RVE{D}, frame::Frame{D}) where {D}
         end
     end
     for (ip, ph) in enumerate(rve.phases)
+        ph.void && continue
         push!(names, ph.name)
         push!(ptags, 1 + ip)
         push!(ents, sort([t for (t, p) in piece_phase if p == ip]))

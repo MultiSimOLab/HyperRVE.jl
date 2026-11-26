@@ -98,7 +98,7 @@ In 2D the sides `xmin`, `xmax`, `ymin`, `ymax` are curves and points, the corner
 that identify periodic nodes (GridapGmsh) merge the labels of opposite faces: use `corners`
 and the phase names there (the interface groups are not affected).
 
-Version 2 is a complete rewrite; see `docs/src/migration.md` to port scripts written for the
+version 0.2 is a complete rewrite; see `docs/src/migration.md` to port scripts written for the
 2024 API.
 
 # Project funded by:
