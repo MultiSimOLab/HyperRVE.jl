@@ -181,7 +181,7 @@ non-overlapping capsules (`length` between the cap centres) with `orientation = 
 above, `avoid` included (hybrid particle + fibre composites). `orientation_tensor(fibres)` gives
 the second-order orientation tensor. Random sequential addition of slender isotropic fibres
 saturates early (about 0.15 for a total aspect ratio of 10); aligned fibres reach about 0.3.
-Refine the fibre phase to about half the radius.
+Refine the fibre phase to `radius / 2`–`radius`.
 
 ```julia
 f = random_capsules(cell; length = 0.3, radius = 0.04, fraction = 0.025, rng = 1)

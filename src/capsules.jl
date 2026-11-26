@@ -88,7 +88,8 @@ end
 function _self_ok(L, per, a, b, r, gap)
     ext = abs.(b .- a) .+ (2r + gap)
     any(d -> per[d] && ext[d] > L[d], 1:3) || return true
-    for k in Iterators.product(ntuple(d -> per[d] ? (-1:1) : (0:0), 3)...)
+    K = ntuple(d -> per[d] ? ceil(Int, ext[d] / L[d]) : 0, 3)
+    for k in Iterators.product(ntuple(d -> -K[d]:K[d], 3)...)
         all(==(0), k) && continue
         s = k .* L
         _segdist2(a, b, a .+ s, b .+ s) < (2r + gap)^2 && return false
@@ -105,23 +106,27 @@ function _capsule_bands_ok(L, per, a::_V3, b::_V3, r, f)
     for d in 1:3
         e = r * sqrt(max(0.0, 1 - u[d]^2))
         vals = (min(a[d], b[d]) - r, max(a[d], b[d]) + r, a[d] - e, a[d] + e, b[d] - e, b[d] + e)
-        vals = d == 3 ? (vals..., a[d] - r, a[d] + r, b[d] - r, b[d] + r) : (vals..., a[d], b[d])
+        # cap poles along z (build! makes the spheres there) and the seam / pole heights at the centres
+        vals = d == 3 ? (vals..., a[d] - r, a[d] + r, b[d] - r, b[d] + r, a[d], b[d]) : (vals..., a[d], b[d])
         for v in vals
             m = per[d] ? abs(v - L[d] * round(v / L[d])) : min(abs(v), abs(v - L[d]))
             m < f && return false
         end
     end
+    # cell edges and corners (all lattice copies that the capsule can reach)
+    kr = ntuple(d -> floor(Int, (min(a[d], b[d]) - r - f) / L[d]):ceil(Int, (max(a[d], b[d]) + r + f) / L[d]), 3)
     for d in 1:3
         t = d == 1 ? (2, 3) : d == 2 ? (1, 3) : (1, 2)
-        for ka in -1:2, kb in -1:2
+        for ka in kr[t[1]], kb in kr[t[2]]
             (!per[t[1]] && !(ka in (0, 1))) && continue
             (!per[t[2]] && !(kb in (0, 1))) && continue
-            p = ntuple(i -> i == d ? -10 * L[d] : i == t[1] ? ka * L[i] : kb * L[i], 3)
-            q = ntuple(i -> i == d ? 11 * L[d] : p[i], 3)
+            p = ntuple(i -> i == d ? (kr[d][1] - 1) * L[d] : i == t[1] ? ka * L[i] : kb * L[i], 3)
+            q = ntuple(i -> i == d ? (kr[d][end] + 1) * L[d] : p[i], 3)
             abs(sqrt(_segdist2(a, b, p, q)) - r) < f && return false
         end
     end
-    for k in Iterators.product(-1:2, -1:2, -1:2)
+    for k in Iterators.product(kr...)
+        any(d -> !per[d] && !(k[d] in (0, 1)), 1:3) && continue
         p = Float64.(k .* L)
         abs(sqrt(_segdist2(a, b, p, p)) - r) < f && return false
     end
@@ -132,10 +137,10 @@ _capvol(l, r) = π * r^2 * l + 4π * r^3 / 3
 _iso_dir(rng) = (z = 2rand(rng) - 1; φ = 2π * rand(rng); s = sqrt(1 - z^2); (s * cos(φ), s * sin(φ), z))
 
 function _orientation(orientation, axis, what)
+    axis isa Integer && !(axis isa Bool) && axis in 1:3 || throw(ArgumentError("$what: axis must be 1, 2 or 3, got $(repr(axis))"))
     if orientation === :isotropic
         return _iso_dir
     elseif orientation === :planar
-        axis isa Integer && !(axis isa Bool) && axis in 1:3 || throw(ArgumentError("$what: axis must be 1, 2 or 3, got $(repr(axis))"))
         t = Tuple(d for d in 1:3 if d != axis)
         return rng -> (φ = 2π * rand(rng); ntuple(d -> d == t[1] ? cos(φ) : d == t[2] ? sin(φ) : 0.0, 3))
     elseif orientation isa Union{Tuple,AbstractVector} && length(orientation) == 3 && all(x -> x isa Real, orientation)
@@ -196,7 +201,11 @@ a vector of lengths, or a sampler `rng -> length` with `fraction` or `n`.
 - `orientation`: `:isotropic` (uniform on the sphere), `:planar` (uniform in the plane normal to
   `axis`), a direction `(x, y, z)` (all aligned with it) or a function `rng -> direction`. Each
   fibre draws its orientation once; failed attempts only move it, so the orientations are not
-  biased by the rejections. [`orientation_tensor`](@ref) gives their second moment.
+  biased by the rejections. Orientations in which the fibre cannot exist at all (longer than
+  the cell and touching its own periodic images, or not fitting with `boundary = :inside`) are
+  redrawn, which biases the distribution only for fibres longer than the cell.
+  [`orientation_tensor`](@ref) gives their second moment.
+- The fibres are returned from the longest to the shortest.
 - `min_gap` (default `0.1 radius`), `face_gap` (default `min_gap`), `boundary`, `avoid`, `rng`,
   `max_tries` and `strict` as in [`random_spheres`](@ref). The bands to the faces reject fibres
   whose surface, cap junctions or cap poles nearly touch a face, edge or corner.
@@ -205,8 +214,8 @@ a vector of lengths, or a sampler `rng -> length` with `fraction` or `n`.
 Random sequential addition of equal capsules with the default gap reaches about 0.26, 0.19,
 0.15 and 0.09 (isotropic) and 0.33 to 0.31 (aligned) for total aspect ratios
 `(length + 2r) / 2r` of 2, 5, 10 and 20; above that an error reports what was placed. Put the
-result in a phase without `fuse` and refine its interface to about `radius / 2` or finer
-(a coarse mesh of thin fibres can make Gmsh fail):
+result in a phase without `fuse` and refine its interface to `radius / 2`–`radius` (a coarse
+mesh of thin fibres can make Gmsh fail):
 `Phase(:fibres, random_capsules(cell; length = 0.3, radius = 0.04, n = 10); refine = 0.02)`.
 """
 function random_capsules(cell::Cell{3}; length=nothing, radius=nothing, fraction=nothing, n=nothing, orientation=:isotropic,
@@ -230,14 +239,16 @@ function random_capsules(cell::Cell{3}; length=nothing, radius=nothing, fraction
     lens = _lengths(rng, volume(cell), length, r, fraction, n, what)
     all(d -> 2r + (inside ? 2fgap : per[d] ? gap : 0.0) < L[d], 1:3) ||
         throw(ArgumentError("$what: the fibre diameter does not fit in the cell"))
+    # an orientation is impossible when the fibre cannot fit inside (boundary = :inside) or would
+    # touch its own periodic images wherever it is placed (fibres longer than the cell)
+    fits(u, l) = (!inside || all(d -> abs(u[d]) * l + 2r + 2fgap < L[d], 1:3)) &&
+                 _self_ok(L, per, (0.0, 0.0, 0.0), u .* l, r, gap)
     if orientation isa Union{Tuple,AbstractVector}
         u = orient(rng)
-        for d in 1:3
-            ext = abs(u[d]) * lens[1] + 2r + (inside ? 2fgap : per[d] ? gap : 0.0)
-            (per[d] || inside) && ext >= L[d] &&
-                throw(ArgumentError("$what: the longest fibre does not fit in the cell along direction $d" *
-                                    (per[d] && abs(u[d]) > 1 - 1e-12 ? "; for fibres spanning the cell use random_fibres" : "")))
-        end
+        fits(u, lens[1]) ||
+            throw(ArgumentError("$what: the longest fibre in this direction does not fit in the cell " *
+                                (inside ? "(boundary = :inside)" : "(it touches its own periodic images)") *
+                                (any(d -> per[d] && abs(u[d]) > 1 - 1e-12, 1:3) ? "; for fibres spanning the cell use random_fibres" : "")))
     end
     grid = _SegGrid(L, per, r + gap, 2r + gap)
     o = Tuple(Float64.(cell.origin))
@@ -254,6 +265,12 @@ function random_capsules(cell::Cell{3}; length=nothing, radius=nothing, fraction
     out = Capsule[]
     for l in lens
         u = orient(rng)
+        redraws = 0
+        while !fits(u, l)
+            (redraws += 1) > 1000 &&
+                throw(ArgumentError("$what: no sampled orientation lets a fibre of length $l fit in the cell; shorten the fibres"))
+            u = orient(rng)
+        end
         placed = false
         for _ in 1:max_tries
             c = ntuple(d -> rand(rng) * L[d], 3)
@@ -287,27 +304,30 @@ end
 """
     orientation_tensor(items) -> Matrix{Float64}
 
-Second-order orientation tensor `A = Σ wᵢ pᵢ pᵢᵀ / Σ wᵢ` of capsules, cylinders or fibres, with
-`pᵢ` the unit axis and `wᵢ` the axis length (1 for fibres). `A ≈ I/3` for isotropic fibres,
-`diag(1/2, 1/2, 0)` for random orientations in the xy plane.
+Second-order orientation tensor `A = (1/N) Σ pᵢ pᵢᵀ` (Advani-Tucker) of capsules, cylinders or
+fibres (or translates of these), with `pᵢ` the unit axis of each item. `A ≈ I/3` for isotropic
+fibres, `diag(1/2, 1/2, 0)` for random orientations in the xy plane.
 """
 function orientation_tensor(items)
     A = zeros(3, 3)
-    W = 0.0
-    for it in items
-        v, w = it isa Capsule ? (it.p2 .- it.p1, 1.0) :
-               it isa Cylinder ? (it.axis, 1.0) :
-               it isa Fibre ? (it.direction, 1.0) :
-               throw(ArgumentError("orientation_tensor: items must be capsules, cylinders or fibres, got $(nameof(typeof(it)))"))
+    N = 0
+    for it0 in items
+        it = it0
+        while it isa Translate
+            it = it.child
+        end
+        v = it isa Capsule ? it.p2 .- it.p1 :
+            it isa Cylinder ? it.axis :
+            it isa Fibre ? it.direction :
+            throw(ArgumentError("orientation_tensor: items must be capsules, cylinders or fibres, got $(nameof(typeof(it)))"))
         l = _norm(v)
         l > 0 || continue
         p = v ./ l
-        w = it isa Fibre ? 1.0 : l
         for i in 1:3, j in 1:3
-            A[i, j] += w * p[i] * p[j]
+            A[i, j] += p[i] * p[j]
         end
-        W += w
+        N += 1
     end
-    W > 0 || throw(ArgumentError("orientation_tensor: no items"))
-    return A ./ W
+    N > 0 || throw(ArgumentError("orientation_tensor: no items"))
+    return A ./ N
 end
