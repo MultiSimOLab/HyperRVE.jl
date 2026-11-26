@@ -94,13 +94,15 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
         stats = nothing
         checks = PeriodicityCheck[]
         if !geometry_only
-            mesh!(rve, frame, part, ifs, mesh)
+            mesh!(rve, frame, part, ifs, mesh, on)
             restore_frame!(frame)
             check_periodicity && (checks = verify_periodicity(rve, frame))
             stats = mesh_stats(frame, mesh, part)
+            check_completeness(frame, part, phases, mesh)
             stats.nelements > 0 ||
                 error("Gmsh produced no $(D == 3 ? "tetrahedra" : "triangles"); the mesh size h may be " *
-                      "too large for the smallest inclusion (try a smaller h or InterfaceRefinement)")
+                      "too large for the smallest inclusion (try a smaller h or InterfaceRefinement)" *
+                      (mesh.surface_algorithm == :default ? "" : ", or use surface_algorithm = :default or :meshadapt"))
             if stats.min_quality < 0.02 || stats.ninverted > 0
                 @warn "generate: poor element quality (minimum SICN $(round(stats.min_quality; sigdigits=2)), " *
                       "$(stats.ninverted) inverted) in phase $(stats.worst_phase) near " *

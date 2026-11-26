@@ -16,18 +16,15 @@ its phase, defines physical groups for phases, faces, edges and corners, imposes
 meshing on opposite faces and checks it node by node. The meshes are written in MSH 4.1 and
 can be read directly with GridapGmsh.
 
-# Examples  
+# Examples
 
- <p align="center"> 
-&nbsp; &nbsp; &nbsp; &nbsp;
-<img alt="Dark"
-src="https://github.com/MultiSimOLab/RVEs.jl/blob/main/docs/imgs/rves.png" width="100%">
+The folder [`examples/`](examples) has one script per capability (spheres, fibres, cells of
+any size, supercells, 2D, booleans, mesh control, interfaces, porous media); run them all with
+`julia --project=. examples/run_all.jl`.
+
+ <p align="center">
+<img alt="RVE examples" src="https://github.com/MultiSimOLab/RVEs.jl/blob/main/docs/imgs/rves.png" width="100%">
 </p>
-
-
-
-
-
 
 # Quick start
 

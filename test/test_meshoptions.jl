@@ -124,7 +124,7 @@ end
         r = generate(rve; h=0.15, mesh=MeshOptions(algorithm=alg))
         @test all(c -> c.ok, r.periodicity) && r.stats.min_quality > 0
     end
-    for salg in (:frontal, :delaunay, :meshadapt, :automatic)
+    for salg in (:default, :frontal, :delaunay, :meshadapt, :automatic)
         r = generate(rve; h=0.15, mesh=MeshOptions(surface_algorithm=salg))
         @test all(c -> c.ok, r.periodicity) && r.stats.min_quality > 0
     end
@@ -214,5 +214,36 @@ end
         @test gmsh.option.getNumber("Mesh.HighOrderSavePeriodic") == 0
     finally
         gmsh.finalize()
+    end
+end
+
+@testset "interior B-spline bodies are meshed (default surface algorithm)" begin
+    c = (0.5, 0.5, 0.5)
+    for g in (Ellipsoid(c, (0.35, 0.12, 0.12)), Rotate(Ellipsoid(c, (0.35, 0.12, 0.12)); axis=(1, 1, 0), angle=π / 4),
+              Scale(Sphere(c, 0.1), (3.5, 1.2, 1.2)))
+        for per in (true, false)
+            generate(RVE(unitcell(periodic=per), Phase(:p, g)); h=0.15) do r
+                @test r.stats.nelements > 0
+                @test mesh_volume() ≈ 1 rtol = 1e-9
+            end
+        end
+    end
+    sup = generate(supercell(RVE(unitcell(), Phase(:p, Ellipsoid(c, (0.3, 0.1, 0.1)))), (2, 2, 1)); h=0.2)
+    @test sup.stats.nelements > 0 && all(x -> x.ok, sup.periodicity)
+end
+
+@testset "B-spline surfaces next to other phases are meshed, incomplete meshes are errors" begin
+    c = (0.5, 0.5, 0.5)
+    e = Ellipsoid(c, (0.3, 0.12, 0.12))
+    for (rve, label) in ((RVE(unitcell(), [Phase(:a, Box((0, 0, 0.2), (1, 1, 0.6))), Phase(:b, e)]), "slab"),
+                         (RVE(unitcell(periodic=false), [Phase(:a, Box((0, 0, 0.2), (1, 1, 0.6))), Phase(:b, e)]), "slab np"),
+                         (RVE(unitcell(), [Phase(:a, Box((0, 0, 0), (1, 1, 1))), Phase(:b, e)]; overlaps=:paint), "full box"),
+                         (RVE(unitcell(), Phase(:solid, Cut(Box((0, 0, 0), (1, 1, 1)), e)); matrix=nothing), "pore"))
+        generate(rve; h=0.12) do r
+            @test mesh_volume() ≈ volume(r) - (label == "pore" ? 4π * 0.3 * 0.12 * 0.12 / 3 : 0.0) rtol = 2e-2
+            for p in r.phases
+                p.volume > 0 && @test !isempty(p.entities)
+            end
+        end
     end
 end

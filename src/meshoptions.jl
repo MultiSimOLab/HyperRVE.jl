@@ -25,7 +25,11 @@ Global meshing options, all lengths in the units of the cell.
   meshes: for Gridap/HyperFEM with periodic cells, generate an order-1 mesh and use
   higher-order finite element spaces on it.
 - `algorithm`: 3D mesher, `:delaunay` (default), `:frontal` or `:hxt`; `surface_algorithm`:
-  `:frontal` (default), `:delaunay`, `:meshadapt` or `:automatic` (also used for 2D cells).
+  `:default`, `:frontal`, `:delaunay`, `:meshadapt` or `:automatic` (also used for 2D cells).
+  `:default` is Frontal-Delaunay, with MeshAdapt on the B-spline surfaces (ellipsoids, bodies
+  transformed with `Scale`) of inclusions inside the cell, where Frontal-Delaunay gives poor
+  elements, and on any surface Frontal-Delaunay leaves without elements (Gmsh 4.15). With an
+  explicit algorithm there is no such fallback; an incomplete mesh is always an error.
 - `optimize`: optimisation of the linear mesh, `:default` (`true`), `:netgen` or `:none`
   (`false`); `:auto` (default) is `:netgen` for curved order-2 meshes (it removes the linear
   elements that would become inverted once curved) and `:default` otherwise. The Netgen
@@ -53,7 +57,7 @@ struct MeshOptions
 end
 
 const _ALG3D = Dict(:delaunay => 1, :frontal => 4, :hxt => 10)
-const _ALG2D = Dict(:frontal => 6, :delaunay => 5, :meshadapt => 1, :automatic => 2)
+const _ALG2D = Dict(:default => 6, :frontal => 6, :delaunay => 5, :meshadapt => 1, :automatic => 2)
 const _HO = Dict(:optimize => "HighOrder", :elastic => "HighOrderElastic")
 
 function MeshOptions(; h=nothing, hmin=nothing, hmax=nothing, growth=1.3, curvature=nothing,
@@ -77,7 +81,7 @@ function MeshOptions(; h=nothing, hmin=nothing, hmax=nothing, growth=1.3, curvat
                                            "supported: periodic matching and the Gridap reader are only tested up to 2)"))
     alg = algorithm == :default ? :delaunay : Symbol(algorithm)
     haskey(_ALG3D, alg) || throw(ArgumentError("MeshOptions: algorithm must be one of $(sort(collect(keys(_ALG3D)))), got $algorithm"))
-    salg = surface_algorithm == :default ? :frontal : Symbol(surface_algorithm)
+    salg = Symbol(surface_algorithm)
     haskey(_ALG2D, salg) ||
         throw(ArgumentError("MeshOptions: surface_algorithm must be one of $(sort(collect(keys(_ALG2D)))), got $surface_algorithm"))
     opt = optimize === true ? :default : optimize === false ? :none : Symbol(optimize)
