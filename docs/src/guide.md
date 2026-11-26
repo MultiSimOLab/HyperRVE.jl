@@ -109,13 +109,20 @@ bcc, kelvin and diamond a larger node sphere changes the joint and the density.
 - `chiral(cell, kind; ring_radius, thickness, mirror = false, filled = false)`: rings of mean
   radius `ring_radius` joined by tangent ligaments, all of width `thickness`. `kind` is
   `:hexachiral`, `:tetrachiral`, `:trichiral` or the anti-chiral `:antitetrachiral`,
-  `:antitrichiral`. `mirror` flips the handedness and `filled` makes the rings solid disks.
+  `:antitrichiral`. `mirror` flips the handedness of the chiral kinds (the anti-chiral ones
+  are their own mirror image) and `filled` makes the rings solid disks.
   The cell is `lattice_cell(kind; a)` with `a` the distance between connected rings.
 - `rotating_squares(cell; angle, hinge)` and `rotating_triangles(cell; angle, hinge)`: rigid
-  units of side `a` turned by `angle` from the closed state and joined at the corners by
-  disks of diameter `hinge`; the cell is `lattice_cell(kind; a, angle)`.
-- `relative_density(kind; ring_radius, thickness)` and `relative_density(kind; angle, hinge)`
-  give the exact solid fraction, with lengths divided by `a`.
+  units of side `a` turned by `angle` (radians) from the closed state and joined at the
+  corners by disks of diameter `hinge`; the cell is `lattice_cell(kind; a, angle)`. The cell
+  proportions do not depend on `angle`, so `a` is deduced from the cell and `angle`: give the
+  same `angle` to `lattice_cell` and to the function.
+- `relative_density(kind; ring_radius, thickness, a)` and `relative_density(kind; angle, hinge, a)`
+  give the exact solid fraction while neighbouring ligaments do not overlap
+  (`thickness < 2 ring_radius / 3` for `:hexachiral`; with `filled`, `thickness <= 2 ring_radius`
+  for the tetra- and `<= 6 ring_radius` for the tri- kinds); outside that range they throw.
+- Nearly closed openings and very small hinges give sharp corners: refine with a smaller `h`
+  or `MeshOptions(hmin, curvature)` if the element quality matters.
 
 ```julia
 c = lattice_cell(:hexachiral; a = 1.0)

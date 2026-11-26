@@ -22,13 +22,14 @@ function _chiral_topology(kind::Symbol)
                  (1, 3, (0, 0)), (3, 1, (0, 1)), (2, 4, (0, 0)), (4, 2, (0, 1))]
         return (nodes, edges, (2.0, 2.0), [1, -1, -1, 1])
     end
-    throw(ArgumentError("unknown chiral lattice $(repr(kind)); kinds: $(join(_CHIRAL, ", "))"))
+    throw(ArgumentError("unknown chiral lattice $(repr(kind)); kinds: $(join(_CHIRAL, ", ")) " *
+                        "(rotating units: $(join(_ROTATING, ", ")))"))
 end
 
 _rot_scale(kind, θ) = kind === :rotating_squares ? 2 * (cos(θ) + sin(θ)) : cos(θ) + sqrt(3) * sin(θ)
 
 function _rot_angle(kind, angle)
-    angle === nothing && throw(ArgumentError("$kind: give the rotation angle"))
+    angle isa Real || throw(ArgumentError("$kind: give the rotation angle in radians"))
     θmax = kind === :rotating_squares ? π / 2 : 2π / 3
     0 < angle < θmax || throw(ArgumentError("$kind: angle must be in (0, $(kind === :rotating_squares ? "π/2" : "2π/3"))"))
     return float(angle)
@@ -47,7 +48,7 @@ function _auxetic_cell(cell::Cell{2}, kind, sz)
                                               "build finite samples with supercell"))
     abs(cell.size[1] / cell.size[2] - sz[1] / sz[2]) <= 1e-6 * sz[1] / sz[2] ||
         throw(ArgumentError("$kind: the cell must have the proportions $(round(sz[1] / sz[2]; sigdigits=6)) " *
-                            "(width / height); use lattice_cell($(repr(kind)); a = ...)"))
+                            "(width / height); use lattice_cell($(repr(kind)); a = ...$(kind in _ROTATING ? ", angle = ..." : ""))"))
     return cell.size[1] / sz[1]
 end
 
@@ -68,17 +69,22 @@ Items of a chiral or anti-chiral lattice: rings of mean radius `ring_radius` and
 (outer radius `ring_radius + thickness / 2`). `kind` is `:hexachiral`, `:tetrachiral`,
 `:trichiral`, `:antitetrachiral` or `:antitrichiral`; the cell must be periodic with the
 proportions of [`lattice_cell`](@ref)`(kind)`, whose `a` is the distance between the
-centres of connected rings. `mirror = true` gives the mirror image (opposite handedness),
-`filled = true` solid disks instead of rings. Use them in a fused phase:
+centres of connected rings. `mirror = true` gives the mirror image (opposite handedness);
+the anti-chiral lattices are their own mirror image, so for them it only moves the lattice.
+`filled = true` gives solid disks instead of rings. Use them in a fused phase:
 `Phase(:lattice, chiral(c, :hexachiral; ring_radius = 0.2, thickness = 0.04); fuse = true)`.
-The exact solid fraction is [`relative_density`](@ref)`(kind; ring_radius, thickness)` with
-lengths divided by `a`.
+The exact solid fraction is [`relative_density`](@ref)`(kind; ring_radius, thickness, a)`.
 """
 function chiral(cell::Cell{2}, kind::Symbol; ring_radius=nothing, thickness=nothing, mirror::Bool=false, filled::Bool=false)
     nodes, edges, sz, col = _chiral_topology(kind)
     a = _auxetic_cell(cell, kind, sz)
     r, t = ring_radius, thickness
     _check_chiral(kind, r, t, filled, a)
+    # anti-chiral ligaments run along the rows of rings, which lie on cell faces: with t = 2r a
+    # ligament edge would lie on the face and break the periodic matching
+    col === nothing || abs(t - 2r) > 1e-6 * a ||
+        throw(ArgumentError("$kind: thickness = 2 ring_radius puts the ligament edges on the cell faces; " *
+                            "change the thickness slightly"))
     s0 = mirror ? -1 : 1
     items = Geometry{2}[]
     for ξ in nodes
@@ -119,8 +125,10 @@ end
 Items of the rotating-squares mechanism: squares turned by `±angle` from the closed state
 (alternating), joined at their corners by hinge disks of diameter `hinge`. The cell must be
 periodic and square, [`lattice_cell`](@ref)`(:rotating_squares; a, angle)`, with `a` the side
-of the squares. Exact solid fraction: [`relative_density`](@ref)`(:rotating_squares; angle, hinge)`
-with `hinge` divided by `a`.
+of the squares; `a` follows from the cell size and `angle`, so give the same `angle` to both.
+`angle` is in radians, in (0, π/2); the openings between squares have angle `2 angle`, and `angle`
+and `π/2 - angle` give mirror-image cells. Exact solid fraction:
+[`relative_density`](@ref)`(:rotating_squares; angle, hinge, a)`.
 """
 function rotating_squares(cell::Cell{2}; angle=nothing, hinge=nothing)
     θ = _rot_angle(:rotating_squares, angle)
@@ -144,8 +152,9 @@ end
 Items of the rotating-triangles mechanism: equilateral triangles of side `a` turned by
 `angle` from the closed (triangular tiling) state, joined at their corners by hinge disks of
 diameter `hinge`. The cell must be periodic with the proportions of
-[`lattice_cell`](@ref)`(:rotating_triangles; a, angle)`. Exact solid fraction:
-[`relative_density`](@ref)`(:rotating_triangles; angle, hinge)` with `hinge` divided by `a`.
+[`lattice_cell`](@ref)`(:rotating_triangles; a, angle)`; `a` follows from the cell size and
+`angle`, so give the same `angle` to both. `angle` is in radians, in (0, 2π/3); `π/3` is the
+kagome arrangement. Exact solid fraction: [`relative_density`](@ref)`(:rotating_triangles; angle, hinge, a)`.
 """
 function rotating_triangles(cell::Cell{2}; angle=nothing, hinge=nothing)
     θ = _rot_angle(:rotating_triangles, angle)
@@ -165,27 +174,41 @@ function rotating_triangles(cell::Cell{2}; angle=nothing, hinge=nothing)
 end
 
 """
-    relative_density(kind; ring_radius, thickness, filled = false)   # chiral kinds
-    relative_density(kind; angle, hinge)                             # :rotating_squares, :rotating_triangles
+    relative_density(kind; ring_radius, thickness, filled = false, a = 1)   # chiral kinds
+    relative_density(kind; angle, hinge, a = 1)                             # :rotating_squares, :rotating_triangles
 
-Exact solid area fraction of the auxetic cells, with lengths divided by `a` (ring spacing or
-side of the units). For `:hexachiral` it is exact for `thickness < 2 ring_radius / 3`, where
-neighbouring ligaments do not overlap.
+Exact solid area fraction of the auxetic cells, with `a` the ring spacing or the side of the
+units (the same lengths as in [`chiral`](@ref), [`rotating_squares`](@ref) and
+[`rotating_triangles`](@ref)). It is exact while neighbouring ligaments do not overlap:
+`thickness < 2 ring_radius / 3` for `:hexachiral`, and with `filled = true` also
+`thickness <= 2 ring_radius` (tetra-) or `thickness <= 6 ring_radius` (tri-); otherwise it throws.
+Measure other cases with `volume_fraction(generate(rve; geometry_only = true), name)`.
 """
-function relative_density(kind::Symbol; ring_radius=nothing, thickness=nothing, filled::Bool=false, angle=nothing, hinge=nothing)
+function relative_density(kind::Symbol; ring_radius=nothing, thickness=nothing, filled::Bool=false, angle=nothing, hinge=nothing, a::Real=1.0)
+    a > 0 || throw(ArgumentError("relative_density: a must be positive"))
     if kind in _ROTATING
+        (ring_radius === nothing && thickness === nothing && !filled) ||
+            throw(ArgumentError("relative_density(:$kind): give angle and hinge (ring_radius, thickness, filled are for chiral lattices)"))
         θ = _rot_angle(kind, angle)
-        _check_hinge(kind, hinge, θ, 1.0)
+        _check_hinge(kind, hinge, θ, a)
+        w = hinge / a
         s = _rot_scale(kind, θ)
-        kind === :rotating_squares && return (1 + π * hinge^2 / 4) / (s / 2)^2
-        return (sqrt(3) + π * hinge^2) / (sqrt(3) * s^2)
+        kind === :rotating_squares && return (1 + π * w^2 / 4) / (s / 2)^2
+        return (sqrt(3) + π * w^2) / (sqrt(3) * s^2)
     end
+    kind in _CHIRAL || throw(ArgumentError("relative_density: unknown auxetic cell $(repr(kind)); kinds: $(join(_AUXETIC, ", ")) " *
+                                           "(strut lattices: relative_density(kind, x))"))
+    (angle === nothing && hinge === nothing) ||
+        throw(ArgumentError("relative_density(:$kind): give ring_radius and thickness (angle, hinge are for rotating units)"))
     nodes, edges, sz, col = _chiral_topology(kind)
-    r, t = ring_radius, thickness
-    _check_chiral(kind, r, t, filled, 1.0)
-    kind === :hexachiral && t >= 2r / 3 &&
-        throw(ArgumentError("relative_density(:hexachiral): exact for thickness < 2 ring_radius / 3; " *
-                            "measure thicker walls with generate(...; geometry_only = true)"))
+    _check_chiral(kind, ring_radius, thickness, filled, a)
+    r, t = ring_radius / a, thickness / a
+    limit = kind === :hexachiral ? (2r / 3, "<", "2 ring_radius / 3") :
+            !filled ? (Inf, "<", "") :
+            kind in (:tetrachiral, :antitetrachiral) ? (2r, "<=", "2 ring_radius") : (6r, "<=", "6 ring_radius")
+    (limit[2] == "<" ? t < limit[1] : t <= limit[1] * (1 + 1e-12)) ||
+        throw(ArgumentError("relative_density(:$kind$(filled ? "; filled = true" : "")): exact for thickness $(limit[2]) $(limit[3]), " *
+                            "where neighbouring ligaments do not overlap; measure thicker walls with generate(...; geometry_only = true)"))
     L = col === nothing ? sqrt(1 - 4r^2) : 1.0
     Ro, Ri = r + t / 2, r - t / 2
     Aov = π / 4 * Ro^2 - Ri / 2 * sqrt(Ro^2 - Ri^2) - Ro^2 / 2 * asin(Ri / Ro)
