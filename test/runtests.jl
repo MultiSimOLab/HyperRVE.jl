@@ -18,6 +18,7 @@ include("helpers.jl")
     @testset "Capsules and fused phases" begin include("test_fuse.jl") end
     @testset "Strut lattices" begin include("test_lattices.jl") end
     @testset "Random packings" begin include("test_random.jl") end
+    @testset "Polyhedra and polygons" begin include("test_polyhedra.jl") end
     @testset "Session" begin include("test_session.jl") end
     @testset "Robustness" begin include("test_robustness.jl") end
     @testset "Aqua" begin Aqua.test_all(RVEs) end

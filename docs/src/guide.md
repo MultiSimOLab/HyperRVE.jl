@@ -38,6 +38,7 @@ and mapped back, so a 1 µm cell in metres gives the same mesh as a unit cell.
 | `Box(corner, size)` / `Box(center = c, size = s)` | `Rectangle(corner, size)` |
 | `Cylinder(base, axis, radius)` (finite) | |
 | `Capsule(p1, p2, radius)` (cylinder with spherical caps) | |
+| `Polyhedron(vertices, faces)` (planar faces, closed surface; prisms, grains, faceted particles) | `Polygon(vertices)` |
 | `Fibre(point, direction, radius)` (infinite) | |
 
 Booleans: `Fuse(a, b, ...)` (`a ∪ b`), `Cut(object, tools...)` (`setdiff`), `Intersect(a, b, ...)`
