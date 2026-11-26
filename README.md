@@ -1,10 +1,9 @@
 # RVEs :construction: :construction: :construction: **Work in progress** :construction: :construction: :construction:
 
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://jmartfrut.github.io/RVEs.jl/stable/)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://jmartfrut.github.io/RVEs.jl/dev/)
-[![Build Status](https://github.com/jmartfrut/RVEs.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/jmartfrut/RVEs.jl/actions/workflows/CI.yml?query=branch%3Amain)
-[![Coverage](https://codecov.io/gh/jmartfrut/RVEs.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/jmartfrut/RVEs.jl)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://multisimolab.github.io/RVEs.jl/stable/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://multisimolab.github.io/RVEs.jl/dev/)
+[![Build Status](https://github.com/MultiSimOLab/RVEs.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/MultiSimOLab/RVEs.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
 # Modelling of periodic RVEs using GMSH
 
@@ -27,7 +26,7 @@ At present, RVEs excels in automating the generation of representative volume el
  <p align="center"> 
 &nbsp; &nbsp; &nbsp; &nbsp;
 <img alt="Dark"
-src="https://github.com/jmartfrut/RVEs/blob/main/docs/imgs/rves.png" width="100%">
+src="https://github.com/MultiSimOLab/RVEs.jl/blob/main/docs/imgs/rves.png" width="100%">
 </p>
 
 
@@ -99,5 +98,5 @@ stopGmsh()
  <p align="center"> 
 &nbsp; &nbsp; &nbsp; &nbsp;
 <img alt="Dark"
-src="https://github.com/jmartfrut/RVEs/blob/main/docs/imgs/aei.png" width="60%">
+src="https://github.com/MultiSimOLab/RVEs.jl/blob/main/docs/imgs/aei.png" width="60%">
 </p>

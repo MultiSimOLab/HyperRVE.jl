@@ -4,7 +4,7 @@ CurrentModule = RVEs
 
 # RVEs
 
-Documentation for [RVEs](https://github.com/jmartfrut/RVEs.jl).
+Documentation for [RVEs](https://github.com/MultiSimOLab/RVEs.jl).
 
 ```@index
 ```

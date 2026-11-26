@@ -1,5 +1,5 @@
-
 .DS_Store
-
-
 *.msh
+Manifest.toml
+/docs/build/
+/docs/Manifest.toml

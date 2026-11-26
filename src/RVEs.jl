@@ -329,7 +329,7 @@ function createMesh!(model::Module, rve::RVE, inclusions::Tuple, out_::Vector{An
                 if (abs(xmin2 - xmin) < eps && abs(xmax2 - xmax) < eps &&
                     abs(ymin2 - ymin) < eps && abs(ymax2 - ymax) < eps &&
                     abs(zmin2 - zmin) < eps && abs(zmax2 - zmax) < eps)
-                    model.mesh.setPeriodic(2, [j[2]], [i[2]], [1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+                    model.mesh.setPeriodic(2, [j[2]], [i[2]], [1, 0, 0, rve.size[1], 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
                 end
             end
         end
@@ -354,7 +354,7 @@ function createMesh!(model::Module, rve::RVE, inclusions::Tuple, out_::Vector{An
                 if (abs(xmin2 - xmin) < eps && abs(xmax2 - xmax) < eps &&
                     abs(ymin2 - ymin) < eps && abs(ymax2 - ymax) < eps &&
                     abs(zmin2 - zmin) < eps && abs(zmax2 - zmax) < eps)
-                    model.mesh.setPeriodic(2, [j[2]], [i[2]], [1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1])
+                    model.mesh.setPeriodic(2, [j[2]], [i[2]], [1, 0, 0, 0, 0, 1, 0, rve.size[2], 0, 0, 1, 0, 0, 0, 0, 1])
                 end
             end
         end
@@ -379,7 +379,7 @@ function createMesh!(model::Module, rve::RVE, inclusions::Tuple, out_::Vector{An
                 if (abs(xmin2 - xmin) < eps && abs(xmax2 - xmax) < eps &&
                     abs(ymin2 - ymin) < eps && abs(ymax2 - ymax) < eps &&
                     abs(zmin2 - zmin) < eps && abs(zmax2 - zmax) < eps)
-                    model.mesh.setPeriodic(2, [j[2]], [i[2]], [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
+                    model.mesh.setPeriodic(2, [j[2]], [i[2]], [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, rve.size[3], 0, 0, 0, 1])
                 end
             end
         end
