@@ -102,7 +102,7 @@ function _fuse_or_error(objs::Vector{DimTag}, D, name)
     end
     # a union cannot be larger than the sum of its parts: OCC returns invalid bodies for some
     # degenerate inputs (e.g. coincident spherical caps of capsules ending at cell corners)
-    _mass(body) <= vin * (1 + 1e-6) ||
+    (_mass(body) <= vin * (1 + 1e-6) && all(t -> gmsh.model.occ.getMass(t...) > 0, body)) ||
         error("phase $name: OCC returned an invalid fused body (volume larger than the sum of the items); " *
               "check for coincident or tangent items, or use fuse = false")
     return body
@@ -160,6 +160,9 @@ function _fused_unit_path!(rve::RVE{D}, ph::Phase{D}, frame, ctx, lo, ℓ, n, to
         error("phase $(ph.name): OCC could not clip the fused cell ($(e.msg)); use fuse = false")
     end
     isempty(body) && return body
+    _mass(body) <= prod(ℓ) * (1 + 1e-6) && all(t -> occ.getMass(t...) > 0, body) ||
+        error("phase $(ph.name): OCC returned an invalid fused cell (volume larger than the cell); " *
+              "check for coincident or tangent items, or use fuse = false")
     tiles = copy(body)
     for k in Iterators.product(ntuple(d -> 0:n[d]-1, D)...)
         all(==(0), k) && continue

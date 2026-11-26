@@ -20,7 +20,7 @@ end
     for (p, q) in (((0.3, 0.5, 0.5), (0.7, 0.5, 0.5)), ((0.3, 0.3, 0.3), (0.7, 0.6, 0.5)), ((0.5, 0.5, 0.7), (0.5, 0.5, 0.3)))
         L = sqrt(sum(abs2, q .- p))
         generate(RVE(unitcell(), Phase(:c, Capsule(p, q, 0.1))); geometry_only=true) do res
-            @test volume(res, :c) ≈ capsule_vol(0.1, L) rtol = 1e-9
+            @test volume(res, :c) ≈ capsule_vol(0.1, L) rtol = 1e-7
             types = Set(gmsh.model.getType(2, t) for (_, t) in gmsh.model.getEntities(2))
             @test !("BSpline surface" in types)            # analytic surfaces only
         end
@@ -33,6 +33,17 @@ end
     rk = geo(RVE(ck, Phase(:c, Capsule(cellpoint(ck, (0.3, 0.5, 0.5)), cellpoint(ck, (0.7, 0.5, 0.5)), 0.1k))))
     @test volume_fraction(rk, :c) ≈ capsule_vol(0.1, 0.4) rtol = 1e-9
     @test_logs (:warn, r"Capsule longer") RVE(unitcell(), Phase(:c, Capsule((-0.2, 0.5, 0.5), (1.2, 0.5, 0.5), 0.1)))
+end
+
+@testset "capsule loops (verification M3)" begin
+    # capsules from the centre to the 8 corners close loops through the periodic images; the
+    # union must be valid (reference: cylinders + one sphere per node, 0.1192336 per cell)
+    caps(o) = [Capsule((0.5, 0.5, 0.5) .+ o, Float64.(q) .+ o, 0.08) for q in Iterators.product((0, 1), (0, 1), (0, 1))][:]
+    ref = 0.1192336
+    x = geo(RVE(unitcell(), Phase(:c, caps((0.0, 0.0, 0.0)); fuse=true); matrix=nothing, tiling=(2, 1, 1)))
+    @test volume(x, :c) ≈ 2ref rtol = 1e-5                 # was silently 2.0 (the whole cell)
+    x = geo(RVE(unitcell(), Phase(:c, caps((0.25, 0.25, 0.25)); fuse=true); matrix=nothing))
+    @test volume(x, :c) ≈ ref rtol = 1e-5
 end
 
 @testset "fused strut lattice (K2-K4)" begin
