@@ -231,3 +231,19 @@ end
     sup = generate(supercell(RVE(unitcell(), Phase(:p, Ellipsoid(c, (0.3, 0.1, 0.1)))), (2, 2, 1)); h=0.2)
     @test sup.stats.nelements > 0 && all(x -> x.ok, sup.periodicity)
 end
+
+@testset "B-spline surfaces next to other phases are meshed, incomplete meshes are errors" begin
+    c = (0.5, 0.5, 0.5)
+    e = Ellipsoid(c, (0.3, 0.12, 0.12))
+    for (rve, label) in ((RVE(unitcell(), [Phase(:a, Box((0, 0, 0.2), (1, 1, 0.6))), Phase(:b, e)]), "slab"),
+                         (RVE(unitcell(periodic=false), [Phase(:a, Box((0, 0, 0.2), (1, 1, 0.6))), Phase(:b, e)]), "slab np"),
+                         (RVE(unitcell(), [Phase(:a, Box((0, 0, 0), (1, 1, 1))), Phase(:b, e)]; overlaps=:paint), "full box"),
+                         (RVE(unitcell(), Phase(:solid, Cut(Box((0, 0, 0), (1, 1, 1)), e)); matrix=nothing), "pore"))
+        generate(rve; h=0.12) do r
+            @test mesh_volume() ≈ volume(r) - (label == "pore" ? 4π * 0.3 * 0.12 * 0.12 / 3 : 0.0) rtol = 2e-2
+            for p in r.phases
+                p.volume > 0 && @test !isempty(p.entities)
+            end
+        end
+    end
+end

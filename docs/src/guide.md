@@ -104,5 +104,8 @@ V  = TestFESpace(model, ReferenceFE(lagrangian, Float64, 1); dirichlet_tags = ["
 - Gmsh may fail to mesh periodic curves for bodies in some generic positions very close to a
   cell edge or corner; the error is explicit.
 - Copies of items much larger than the cell make the geometry step slow.
-- Volumes and areas of pieces bounded by B-spline surfaces (ellipsoids, non-uniform scalings)
-  are accurate to about 1e-2.
+- Volumes and areas of pieces bounded by B-spline surfaces (ellipsoids and bodies transformed
+  with `Scale`) are accurate to about 1e-2.
+- Gmsh's default surface mesher sometimes leaves such B-spline surfaces without elements;
+  `generate` remeshes those surfaces with MeshAdapt, and stops with an error if a phase is
+  still not meshed completely.
