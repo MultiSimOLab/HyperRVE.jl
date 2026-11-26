@@ -80,6 +80,29 @@ lattice shift of node `j`; `lattice_topology(kind)` returns those of a preset.
 the nodes twice). In a non-periodic cell the lattice is the complete finite truss, outer faces
 included. Struts of different radii: `radius = [r1, r2, ...]`, one per strut.
 
+## Random packings
+
+`random_spheres(cell; ...)`, `random_disks(cell; ...)` (2D) and `random_fibres(cell; axis, ...)`
+return non-overlapping inclusions placed by random sequential addition, ready for a phase
+(without `fuse`):
+
+```julia
+cell = Cell((1.0, 1.0, 1.0))
+rve  = RVE(cell, Phase(:particles, random_spheres(cell; radius = 0.08, fraction = 0.2, rng = 1)))
+```
+
+Give two of `radius`, `fraction` and `n`, a vector of radii, or a sampler `rng -> radius` with
+`fraction` or `n`. `min_gap` (default `0.1 *` the smallest radius) keeps the surfaces apart;
+`face_gap` (default `min_gap`) rejects inclusions nearly tangent to a face, edge or corner of
+the cell, or centred nearly on a face plane: these give slivers and Gmsh periodicity failures.
+`boundary = :inside` keeps every inclusion inside the cell. `rng` is an `AbstractRNG` or an
+integer seed. Random sequential addition saturates at about 0.38 for equal spheres and 0.55 for
+equal disks (less with gaps: about 0.30 and 0.48 with the default `min_gap`); above that the
+call fails with what it placed (`strict = false`: warning and partial packing).
+Dense packings leave ligaments of width `min_gap` between inclusions: the mesh must resolve
+them (`refine` on the phase or a smaller `h`), or raise `min_gap`; otherwise Gmsh may leave
+pieces unmeshed and `generate` reports it.
+
 ## Mesh control
 
 - `generate(rve; h)`: bulk size; `Phase(...; h)`: size inside a phase.
