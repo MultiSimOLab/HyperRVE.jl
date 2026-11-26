@@ -86,6 +86,20 @@ unchanged, the fuse 20–50 % faster). For lattices whose nodes are buried in th
 `node_radius = 1.42 * radius` is about four times faster at a volume change below 1e-6; for
 bcc, kelvin and diamond a larger node sphere changes the joint and the density.
 
+## More lattices, particle arrays and laminates
+
+- `lattice(cell, :bccz; density)` and `:fccz`: BCC and FCC with struts along the z edges
+  (exact `relative_density` and `strut_radius` like the other presets).
+- 2D strut lattices: `lattice(cell, kind; thickness)` with `kind` = `:square`, `:triangular`,
+  `:honeycomb`, `:kagome` or `:reentrant` (auxetic; `angle` of the inclined struts below the
+  horizontal, default 30°, and `ratio` = vertical / inclined strut length, default 2). The
+  cell must have the proportions of `lattice_cell(kind; a)`, which returns it for strut
+  length `a`: `c = lattice_cell(:honeycomb; a = 0.2); lattice(c, :honeycomb; thickness = 0.02)`.
+  `struts` also works in 2D cells (rectangles and disks; `thickness = 2 radius`).
+- `particle_array(cell, kind; fraction | radius)`: `:sc`, `:bcc`, `:fcc` spheres or `:square`,
+  `:hex` disks (the hexagonal cell is `Cell((a, √3 a))`).
+- `laminate(cell; axis, fractions, names, offset)`: one phase per layer, for `matrix = nothing`.
+
 ## Random packings
 
 `random_spheres(cell; ...)`, `random_disks(cell; ...)` (2D) and `random_fibres(cell; axis, ...)`

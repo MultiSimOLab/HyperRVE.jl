@@ -18,14 +18,16 @@ end
 const _PRESET_NODES = Dict{Symbol,Vector{Vec{3}}}(
     :cubic => [(0.0, 0.0, 0.0)],
     :bcc => [(0.0, 0.0, 0.0), (0.5, 0.5, 0.5)],
+    :bccz => [(0.0, 0.0, 0.0), (0.5, 0.5, 0.5)],
     :fcc => [(0.0, 0.0, 0.0), (0.0, 0.5, 0.5), (0.5, 0.0, 0.5), (0.5, 0.5, 0.0)],
+    :fccz => [(0.0, 0.0, 0.0), (0.0, 0.5, 0.5), (0.5, 0.0, 0.5), (0.5, 0.5, 0.0)],
     :octet => [(0.0, 0.0, 0.0), (0.0, 0.5, 0.5), (0.5, 0.0, 0.5), (0.5, 0.5, 0.0)],
     :kelvin => unique([Tuple(p[k] for k in perm) for p in ((0.0, 0.25, 0.5), (0.0, 0.75, 0.5))
                        for perm in ((1, 2, 3), (1, 3, 2), (2, 1, 3), (2, 3, 1), (3, 1, 2), (3, 2, 1))]),
     :diamond => [(0.0, 0.0, 0.0), (0.0, 0.5, 0.5), (0.5, 0.0, 0.5), (0.5, 0.5, 0.0),
                  (0.25, 0.25, 0.25), (0.25, 0.75, 0.75), (0.75, 0.25, 0.75), (0.75, 0.75, 0.25)])
 
-const _PRESET_DIST = Dict(:cubic => 1.0, :bcc => sqrt(3) / 2, :fcc => sqrt(2) / 2, :octet => sqrt(2) / 2,
+const _PRESET_DIST = Dict(:cubic => 1.0, :bcc => sqrt(3) / 2, :fcc => sqrt(2) / 2, :bccz => sqrt(3) / 2, :fccz => sqrt(2) / 2, :octet => sqrt(2) / 2,
                           :kelvin => sqrt(2) / 4, :diamond => sqrt(3) / 4)
 
 """
@@ -33,24 +35,30 @@ const _PRESET_DIST = Dict(:cubic => 1.0, :bcc => sqrt(3) / 2, :fcc => sqrt(2) / 
 
 Nodes (fractional coordinates) and struts `(i, j, offset)` of a preset strut lattice:
 `:cubic`, `:bcc`, `:fcc` (corner-to-face-centre struts, i.e. the face diagonals, the usual
-additive-manufacturing FCC), `:octet` (all nearest neighbours of FCC), `:kelvin`
+additive-manufacturing FCC), `:bccz` and `:fccz` (the same with struts along the z edges,
+common in additive manufacturing), `:octet` (all nearest neighbours of FCC), `:kelvin`
 (tetrakaidecahedral foam) and `:diamond`.
 """
-function lattice_topology(kind::Symbol)
+function lattice_topology(kind::Symbol; kwargs...)
+    kind in _PRESETS_2D && return lattice_topology(kind, Val(2); kwargs...)
+    isempty(kwargs) || throw(ArgumentError("lattice_topology: angle and ratio apply to 2D lattices only"))
     haskey(_PRESET_NODES, kind) ||
         throw(ArgumentError("unknown lattice $(repr(kind)); presets: $(join(sort(collect(keys(_PRESET_NODES))), ", "))"))
     nodes = _PRESET_NODES[kind]
     edges = _edges_by_distance(nodes, _PRESET_DIST[kind])
-    kind == :fcc && (edges = filter(e -> e[1] == 1 || e[2] == 1, edges))
+    kind in (:fcc, :fccz) && (edges = filter(e -> e[1] == 1 || e[2] == 1, edges))
+    kind in (:bccz, :fccz) && push!(edges, (1, 1, (0, 0, 1)))        # the z edges of the cube
     return (nodes=nodes, edges=edges)
 end
 
 _wrap01(x) = (y = x - floor(x); abs(y - 1) < 1e-12 ? 0.0 : y)
 
 """
-    struts(cell, nodes, edges; radius, node_radius = :auto) -> Vector{Geometry{3}}
+    struts(cell, nodes, edges; radius, node_radius = :auto) -> Vector{Geometry}
 
-Items of a strut lattice: one [`Cylinder`](@ref) per strut and one [`Sphere`](@ref) per node.
+Items of a strut lattice: one [`Cylinder`](@ref) per strut and one [`Sphere`](@ref) per node
+(in a 2D cell: a rectangle of width `2 radius` per strut and a [`Disk`](@ref) per node;
+`thickness = 2 radius` may be given instead of `radius`).
 
 - `nodes`: points in fractional coordinates of the cell (`(0.5, 0.5, 0.5)` is the centre).
 - `edges`: `(i, j)` joins nodes `i` and `j` of the cell; `(i, j, (o1, o2, o3))` joins node `i`
@@ -64,26 +72,28 @@ cell is emitted (a strut crossing a face appears at both faces, cut by them), so
 is the complete finite truss. Use the items in a fused phase:
 `Phase(:lattice, struts(...); fuse = true)`.
 """
-function struts(cell::Cell{3}, nodes, edges; radius, node_radius=:auto)
-    ξ = Vec{3}[_vec(Val(3), p, "lattice node") for p in nodes]
+function struts(cell::Cell{D}, nodes, edges; radius=nothing, thickness=nothing, node_radius=:auto) where {D}
+    (radius === nothing) != (thickness === nothing) || throw(ArgumentError("struts: give radius or thickness (= 2 radius)"))
+    radius === nothing && (radius = thickness isa Real ? thickness / 2 : thickness ./ 2)
+    ξ = Vec{D}[_vec(Val(D), p, "lattice node") for p in nodes]
     isempty(ξ) && throw(ArgumentError("struts: no nodes"))
     # wrap nodes into [0, 1) and remember the shift to correct the edge offsets
     shift = [map(x -> floor(Int, x + 1e-12), p) for p in ξ]
     ξ = [map(_wrap01, p) for p in ξ]
-    for i in eachindex(ξ), j in i+1:length(ξ), o in _offsets3()
+    for i in eachindex(ξ), j in i+1:length(ξ), o in Iterators.product(ntuple(_ -> -1:1, D)...)
         _norm(ξ[j] .+ o .- ξ[i]) < _LTOL && throw(ArgumentError("struts: nodes $i and $j coincide"))
     end
-    E = Tuple{Int,Int,NTuple{3,Int}}[]
+    E = Tuple{Int,Int,NTuple{D,Int}}[]
     for e in edges
-        bad() = ArgumentError("struts: an edge is (i, j) or (i, j, (o1, o2, o3)) with integers, got $e")
+        bad() = ArgumentError("struts: an edge is (i, j) or (i, j, offset) with $D integer offsets, got $e")
         (length(e) in (2, 3)) || throw(bad())
         all(x -> x isa Integer, (e[1], e[2])) || throw(bad())
-        length(e) == 3 && !(length(e[3]) == 3 && all(x -> x isa Integer, e[3])) && throw(bad())
+        length(e) == 3 && !(length(e[3]) == D && all(x -> x isa Integer, e[3])) && throw(bad())
         i, j = Int(e[1]), Int(e[2])
-        o = length(e) == 3 ? ntuple(k -> Int(e[3][k]), 3) : (0, 0, 0)
+        o = length(e) == 3 ? ntuple(k -> Int(e[3][k]), D) : ntuple(_ -> 0, D)
         (1 <= i <= length(ξ) && 1 <= j <= length(ξ)) || throw(ArgumentError("struts: edge $e refers to a missing node"))
         o = o .+ Tuple(shift[j]) .- Tuple(shift[i])
-        i == j && o == (0, 0, 0) && throw(ArgumentError("struts: edge $e has zero length"))
+        i == j && all(==(0), o) && throw(ArgumentError("struts: edge $e has zero length"))
         push!(E, (i, j, o))
     end
     isempty(E) && throw(ArgumentError("struts: no edges"))
@@ -134,15 +144,21 @@ function struts(cell::Cell{3}, nodes, edges; radius, node_radius=:auto)
         end
         return isempty(out) ? (0,) : Tuple(out)
     end
-    placements(a, b) = vec(collect(Iterators.product(ntuple(d -> shifts(a, b, d), 3)...)))
-    items = Geometry{3}[]
+    placements(a, b) = vec(collect(Iterators.product(ntuple(d -> shifts(a, b, d), D)...)))
+    items = Geometry{D}[]
     short = Int[]
     for (k, (i, j, o)) in enumerate(E)
         a, b = ξ[i], ξ[j] .+ o
         axis = (b .- a) .* cell.size                   # not q - p: exact lengths for the periodicity checks
         _norm(axis) <= 2 * r[k] && push!(short, k)
         for s in placements(a, b)
-            push!(items, Cylinder(cellpoint(cell, a .+ s), axis, r[k]))
+            p = cellpoint(cell, a .+ s)
+            if D == 3
+                push!(items, Cylinder(p, axis, r[k]))
+            else                                       # a rectangle of width 2r along the strut
+                n = (-axis[2], axis[1]) ./ _norm(axis) .* r[k]
+                push!(items, Polygon([p .+ n, p .- n, p .+ axis .- n, p .+ axis .+ n]))
+            end
         end
     end
     isempty(short) || @warn "struts: struts $short are shorter than their diameter"
@@ -150,7 +166,7 @@ function struts(cell::Cell{3}, nodes, edges; radius, node_radius=:auto)
         for i in eachindex(ξ)
             used[i] || continue
             for s in placements(ξ[i], ξ[i])
-                push!(items, Sphere(cellpoint(cell, ξ[i] .+ s), rn[i]))
+                push!(items, D == 3 ? Sphere(cellpoint(cell, ξ[i] .+ s), rn[i]) : Disk(cellpoint(cell, ξ[i] .+ s), rn[i]))
             end
         end
     end
@@ -162,7 +178,8 @@ end
 # OpenCASCADE volumes of the fused lattices (relative error below 5e-5).
 const _DENSITY = Dict(:cubic => (3π, 8sqrt(2), 0.30), :bcc => (4sqrt(3) * π, 39.1918, 0.18),
                       :diamond => (4sqrt(3) * π, 39.192, 0.14), :kelvin => (6sqrt(2) * π, 60.338, 0.14),
-                      :fcc => (6sqrt(2) * π, 54.6275, 0.14), :octet => (12sqrt(2) * π, 154.510, 0.14))
+                      :fcc => (6sqrt(2) * π, 54.6275, 0.14), :octet => (12sqrt(2) * π, 154.510, 0.14),
+                      :bccz => ((4sqrt(3) + 1) * π, 49.1829, 0.14), :fccz => ((6sqrt(2) + 1) * π, 66.8563, 0.14))
 
 """
     relative_density(kind, x)                         # preset, cubic cell, x = radius / edge
@@ -226,4 +243,73 @@ function lattice(cell::Cell{3}, kind::Symbol; radius=nothing, density=nothing, n
         radius = strut_radius(kind, density) * cell.size[1]
     end
     return struts(cell, t.nodes, t.edges; radius=radius, node_radius=node_radius)
+end
+
+# ---------------------------------------------------------------- 2D strut lattices
+
+const _PRESETS_2D = (:square, :triangular, :honeycomb, :kagome, :reentrant)
+
+"""
+    lattice_topology(kind; angle, ratio) -> (nodes, edges, size)      # 2D presets (also lattice_topology(kind))
+
+Nodes (fractional), struts `(i, j, offset)` and the rectangular periodic cell size, for a
+strut length 1, of a 2D lattice: `:square`, `:triangular`, `:honeycomb` (hexagonal),
+`:kagome` and `:reentrant` (auxetic re-entrant honeycomb: inclined struts of length 1 at
+`angle` below the horizontal, default 30°, vertical struts of length `ratio`, default 2;
+`angle < 0` gives convex hexagons, `angle = -30°, ratio = 1` the regular honeycomb).
+"""
+function lattice_topology(kind::Symbol, ::Val{2}; angle=π / 6, ratio=2.0)
+    if kind === :square
+        return (nodes=[(0.0, 0.0)], edges=[(1, 1, (1, 0)), (1, 1, (0, 1))], size=(1.0, 1.0))
+    elseif kind === :triangular
+        return (nodes=[(0.0, 0.0), (0.5, 0.5)],
+                edges=[(1, 1, (1, 0)), (2, 2, (1, 0)), (1, 2, (0, 0)), (1, 2, (-1, 0)), (1, 2, (0, -1)), (1, 2, (-1, -1))],
+                size=(1.0, sqrt(3)))
+    elseif kind === :kagome
+        L = (2.0, 2sqrt(3))
+        P = [(0.0, 0.0), (1.0, 0.0), (0.5, sqrt(3) / 2), (1.0, sqrt(3)), (0.0, sqrt(3)), (1.5, 3sqrt(3) / 2)]
+        ξ = [p ./ L for p in P]
+        E = Tuple{Int,Int,NTuple{2,Int}}[]
+        for i in eachindex(ξ), j in i:length(ξ), o in Iterators.product(-1:1, -1:1)
+            i == j && o <= (0, 0) && continue
+            abs(_norm((ξ[j] .+ o .- ξ[i]) .* L) - 1) < 1e-9 && push!(E, (i, j, o))
+        end
+        return (nodes=ξ, edges=E, size=L)
+    elseif kind in (:honeycomb, :reentrant)
+        θ, h = kind === :honeycomb ? (-π / 6, 1.0) : (Float64(angle), Float64(ratio))
+        (h > 0 && abs(θ) < π / 2) || throw(ArgumentError("lattice: ratio must be > 0 and |angle| < 90°"))
+        W, H = 2cos(θ), 2h - 2sin(θ)
+        H > 0 || throw(ArgumentError("lattice: ratio must exceed sin(angle) (the struts would cross)"))
+        nodes = [(0.0, 0.0), (0.0, h / H), (0.5, (h - sin(θ)) / H), (0.5, (2h - sin(θ)) / H)]
+        edges = [(1, 2, (0, 0)), (3, 4, (0, 0)), (2, 3, (0, 0)), (2, 3, (-1, 0)), (4, 1, (0, 1)), (4, 1, (1, 1))]
+        return (nodes=nodes, edges=edges, size=(W, H))
+    end
+    throw(ArgumentError("unknown 2D lattice $(repr(kind)); presets: $(join(_PRESETS_2D, ", "))"))
+end
+
+"""
+    lattice_cell(kind; a = 1, angle, ratio, origin = nothing) -> Cell{2}
+
+The rectangular periodic cell of a 2D preset lattice with strut length `a` (see
+[`lattice_topology`](@ref)); `lattice(lattice_cell(:honeycomb; a = 0.2), :honeycomb; thickness = 0.02)`.
+"""
+function lattice_cell(kind::Symbol; a=1.0, angle=π / 6, ratio=2.0, origin=nothing)
+    t = lattice_topology(kind, Val(2); angle, ratio)
+    return Cell(_positive(a, "lattice_cell a") .* t.size; origin=origin)
+end
+
+"""
+    lattice(cell::Cell{2}, kind; thickness, node_radius = :auto, angle, ratio)
+
+Items of a 2D preset strut lattice (rectangles of width `thickness` and disks at the nodes)
+in its rectangular periodic cell, which must have the proportions of
+[`lattice_cell`](@ref)`(kind; ...)` (any size). Use them in a fused phase:
+`Phase(:lattice, lattice(cell, :reentrant; thickness = 0.05); fuse = true)`.
+"""
+function lattice(cell::Cell{2}, kind::Symbol; thickness, node_radius=:auto, angle=π / 6, ratio=2.0)
+    t = lattice_topology(kind, Val(2); angle, ratio)
+    abs(cell.size[1] / cell.size[2] - t.size[1] / t.size[2]) <= 1e-6 * t.size[1] / t.size[2] ||
+        throw(ArgumentError("lattice: the cell of a $(repr(kind)) lattice must have the proportions " *
+                            "$(round(t.size[1] / t.size[2]; sigdigits=6)) (width / height); use lattice_cell($(repr(kind)); a = ...)"))
+    return struts(cell, t.nodes, t.edges; thickness=thickness, node_radius=node_radius)
 end
