@@ -6,6 +6,7 @@
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://multisimolab.github.io/HyperRVE.jl/stable/)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://multisimolab.github.io/HyperRVE.jl/dev/)
 [![Build Status](https://github.com/MultiSimOLab/HyperRVE.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/MultiSimOLab/HyperRVE.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Coverage](https://codecov.io/gh/MultiSimOLab/HyperRVE.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/MultiSimOLab/HyperRVE.jl)
 
 # Periodic RVE meshes with Gmsh
 
