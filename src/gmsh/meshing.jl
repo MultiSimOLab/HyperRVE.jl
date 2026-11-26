@@ -125,25 +125,71 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{Interf
     gmsh.option.setNumber("Mesh.MeshSizeMin", hmin)
     # hmin is a hard lower bound: it wins over the bulk sizes as well
     gmsh.option.setNumber("Mesh.MeshSizeMax", max(opts.hmax === nothing ? H : S(opts.hmax), hmin))
+    gmsh.option.setNumber("Mesh.Algorithm", _ALG2D[opts.surface_algorithm])
+    gmsh.option.setNumber("Mesh.Algorithm3D", _ALG3D[opts.algorithm])
+    gmsh.option.setNumber("Mesh.Optimize", opts.optimize == :none ? 0 : 1)
+    gmsh.option.setNumber("Mesh.OptimizeNetgen", opts.optimize == :netgen ? 1 : 0)
+    gmsh.option.setNumber("Mesh.ElementOrder", 1)          # generation is always linear
     try
         gmsh.model.mesh.generate(D)
     catch e
         e isa ErrorException || rethrow()
+        alt = opts.algorithm == :delaunay ? "" : ", or try algorithm = :delaunay"
         error("Gmsh failed to mesh the RVE ($(e.msg)). Common causes: an inclusion crossing or " *
-              "touching a face by a tiny amount (sliver), or a global size h much larger than the inclusions.")
+              "touching a face by a tiny amount (sliver), or a global size h much larger than the inclusions$alt.")
+    end
+    if opts.order == 2
+        # before restore_frame!: curved mid-nodes are projected on the (normalised) CAD
+        gmsh.option.setNumber("Mesh.SecondOrderLinear", opts.curved ? 0 : 1)
+        gmsh.option.setNumber("Mesh.HighOrderOptimize", 0)
+        try
+            gmsh.model.mesh.setOrder(2)
+            opts.optimize_curved == :none || gmsh.model.mesh.optimize(_HO[opts.optimize_curved])
+        catch e
+            e isa ErrorException || rethrow()
+            error("Gmsh failed to build or optimise the order-2 mesh ($(e.msg)); try curved = false " *
+                  "or another optimize_curved")
+        end
     end
     return nothing
 end
 
-function mesh_stats(frame::Frame{D}, opts::MeshOptions) where {D}
+function mesh_stats(frame::Frame{D}, opts::MeshOptions, part::Partition) where {D}
     ntags, _, _ = gmsh.model.mesh.getNodes()
-    _, etags, _ = gmsh.model.mesh.getElements(D)
-    tags = isempty(etags) ? Int[] : reduce(vcat, etags)
-    isempty(tags) && return MeshStats(length(ntags), 0, opts.order, NaN, NaN, NaN, NaN)
+    nan3 = (NaN, NaN, NaN)
+    # elements per phase (one getElements per entity of dimension D)
+    tags = Int[]
+    owner = Int[]                       # index into part.names
+    for (k, ents) in enumerate(part.entities), e in ents
+        _, et, _ = gmsh.model.mesh.getElements(D, e)
+        for t in et
+            append!(tags, t)
+            append!(owner, fill(k, length(t)))
+        end
+    end
+    isempty(tags) && return MeshStats(length(ntags), 0, opts.order, NaN, NaN, NaN, NaN, ntuple(_ -> 0, 10), 0,
+                                      NaN, nan3, "", Pair{String,Float64}[])
     q = gmsh.model.mesh.getElementQualities(tags, "minSICN")
     emin = gmsh.model.mesh.getElementQualities(tags, "minEdge")
     emax = gmsh.model.mesh.getElementQualities(tags, "maxEdge")
+    sj = opts.order == 2 ? gmsh.model.mesh.getElementQualities(tags, "minSJ") : nothing
+    hist = zeros(Int, 10)
+    for x in q
+        hist[isfinite(x) ? clamp(floor(Int, 10x) + 1, 1, 10) : 1] += 1
+    end
+    ninv = count(<=(0), sj === nothing ? q : sj)
+    # worst element: the most inverted one for order 2, otherwise the lowest quality
+    w = sj !== nothing && ninv > 0 ? argmin(sj) : argmin(q)
+    _, nodes, _, _ = gmsh.model.mesh.getElement(tags[w])
+    pts = [gmsh.model.mesh.getNode(n)[1] for n in nodes]
+    wp = Tuple(sum(pts) ./ length(pts))
+    pq = Pair{String,Float64}[]
+    for (k, name) in enumerate(part.names)
+        sel = q[owner.==k]
+        isempty(sel) || push!(pq, name => minimum(sel))
+    end
     # called after restore_frame!: node coordinates are physical
     return MeshStats(length(ntags), length(tags), opts.order, minimum(q), sum(q) / length(q),
-                     minimum(emin), maximum(emax))
+                     minimum(emin), maximum(emax), Tuple(hist), ninv,
+                     sj === nothing ? NaN : minimum(sj), (wp[1], wp[2], wp[3]), part.names[owner[w]], pq)
 end

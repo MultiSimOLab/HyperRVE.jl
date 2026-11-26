@@ -13,6 +13,7 @@ include("helpers.jl")
     @testset "Supercells" begin include("test_supercell.jl") end
     @testset "2D cells" begin include("test_2d.jl") end
     @testset "Mesh control" begin include("test_meshcontrol.jl") end
+    @testset "Mesh options" begin include("test_meshoptions.jl") end
     @testset "Session" begin include("test_session.jl") end
     @testset "Robustness" begin include("test_robustness.jl") end
     @testset "Aqua" begin Aqua.test_all(RVEs) end

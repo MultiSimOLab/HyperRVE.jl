@@ -77,6 +77,10 @@ phase, and `refine = 0.02` the size on the interfaces of a phase, graded with a 
 (`MeshOptions(growth = 1.3)`) back to the bulk size. The size field is periodic: refining an
 inclusion close to a face also refines the opposite face, so periodic meshes stay well shaped.
 
+Element order, meshing algorithms and optimisation are set with `MeshOptions(order = 2,
+algorithm = :frontal, optimize = :netgen, ...)`; `quality_report(res)` prints the quality
+histogram, the minimum per phase and the location of the worst element.
+
 `generate` opens and closes Gmsh by itself and returns plain Julia data (phase volumes and
 fractions, physical groups, mesh statistics, periodicity checks). Opposite faces of periodic
 directions are meshed identically (`gmsh.model.mesh.setPeriodic`, MSH 4.1 periodic links,
