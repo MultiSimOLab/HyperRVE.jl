@@ -18,5 +18,6 @@ mesh next to the script.
 | `11_random_packings.jl` | random spheres (target fraction, size distribution), aligned fibres, disks |
 | `12_voronoi_polycrystal.jl` | periodic Voronoi polycrystal, grain groups, 2D tessellation |
 | `13_foams_and_voids.jl` | closed-cell foam at a density, open-cell foam, void phases |
+| `14_particle_chains.jl` | field-structured MRE: particle chains, isotropic reference, variants, 2D |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.
