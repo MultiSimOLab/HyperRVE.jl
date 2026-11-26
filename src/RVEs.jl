@@ -17,6 +17,7 @@ export Cell, cellpoint
 export Geometry, Sphere, Ellipsoid, Box, Cylinder, Capsule, Fibre, Disk, Ellipse, Rectangle
 export Fuse, Cut, Intersect, Translate, Rotate, Scale
 export Phase, RVE, supercell
+export struts, lattice, lattice_topology, relative_density, strut_radius
 export MeshOptions, InterfaceRefinement
 export generate, RVEMesh, write_mesh, view_mesh, close_gmsh, PeriodicityError
 export volume, volume_fraction, volume_fractions, phase_names, group_names, group_tag, quality_report
@@ -28,6 +29,7 @@ include("geometry.jl")
 include("phase.jl")
 include("meshoptions.jl")
 include("rve.jl")
+include("lattices.jl")
 include("frame.jl")
 include("result.jl")
 include("gmsh/session.jl")

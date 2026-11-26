@@ -59,6 +59,27 @@ Phases are painted in order: where two phases overlap, the one listed later wins
 `[Phase(:coating, Sphere(c, R)), Phase(:core, Sphere(c, r))]`. `matrix = nothing` removes the
 background (porous solids, lattices): the mesh then contains only the phases.
 
+## Strut lattices
+
+`lattice(cell, kind; radius | density)` returns the items of a preset strut lattice (`:cubic`,
+`:bcc`, `:fcc`, `:octet`, `:kelvin`, `:diamond`): one `Cylinder` per strut and one `Sphere`
+per node (`node_radius = :auto` uses the largest strut at the node; `nothing` removes them).
+Put them in a fused phase:
+
+```julia
+cell = Cell((1.0, 1.0, 1.0))
+rve  = RVE(cell, Phase(:lattice, lattice(cell, :octet; density = 0.15); fuse = true); matrix = nothing)
+```
+
+`density` is the relative density of the fused lattice (exact formula for the presets in a cubic
+cell, with the node spheres; `strut_radius(kind, density)` and `relative_density(kind, x)`
+convert, with `x = radius / edge`). Any topology works with `struts(cell, nodes, edges; radius)`:
+nodes in fractional coordinates and struts `(i, j)` or `(i, j, offset)`, where `offset` is the
+lattice shift of node `j`; `lattice_topology(kind)` returns those of a preset.
+`relative_density(cell, nodes, edges; radius)` is a first-order estimate (it counts overlaps at
+the nodes twice). In a non-periodic cell the lattice is the complete finite truss, outer faces
+included. Struts of different radii: `radius = [r1, r2, ...]`, one per strut.
+
 ## Mesh control
 
 - `generate(rve; h)`: bulk size; `Phase(...; h)`: size inside a phase.

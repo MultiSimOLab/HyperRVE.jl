@@ -14,5 +14,6 @@ mesh next to the script.
 | `07_mesh_control.jl` | phase sizes, graded refinement near a face, order 2, quality report |
 | `08_coated_particle_interfaces.jl` | overlapping phases and interface groups |
 | `09_porous.jl` | no matrix: porous solid and its pore walls |
+| `10_strut_lattices.jl` | strut lattices: presets by density, in a matrix, custom topology, finite block |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.
