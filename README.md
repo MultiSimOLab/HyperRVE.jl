@@ -94,11 +94,12 @@ groups
 | `corners`, `boundary` | 0 / 2, 1, 0 | the 8 corners (7), the whole cell surface (8) |
 | `edge_ymin_zmin`, ... | 1, 0 | the 12 cell edges |
 | `corner_xmin_ymin_zmin`, ... | 0 | each corner |
+| `interface_<a>_<b>`, `interfaces` | 2, 1, 0 | interfaces between phases `a` and `b` (`void` without matrix), and their union |
 
 In 2D the sides `xmin`, `xmax`, `ymin`, `ymax` are curves and points, the corners are
 `corner_xmin_ymin`, ... and there are no `edge_*` groups. In periodic directions, readers
 that identify periodic nodes (GridapGmsh) merge the labels of opposite faces: use `corners`
-and the phase names there.
+and the phase names there (the interface groups are not affected).
 
 Version 2 is a complete rewrite; see `docs/src/migration.md` to port scripts written for the
 2024 API.

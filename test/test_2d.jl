@@ -44,9 +44,10 @@ end
     cell = Cell((2.0, 1.0); origin=(1.0, -1.0))
     generate(RVE(cell, Phase(:p, Disk(cellpoint(cell, (0, 0)), 0.2))); geometry_only=true) do res
         @test sort(group_names(res; dim=2)) == ["matrix", "p"]
-        @test Set(group_names(res; dim=1)) == Set(["xmin", "xmax", "ymin", "ymax", "boundary"])
+        cellgroups(dim) = Set(filter(!startswith("interface"), group_names(res; dim=dim)))
+        @test cellgroups(1) == Set(["xmin", "xmax", "ymin", "ymax", "boundary"])
         corners = ["corner_xmin_ymin", "corner_xmax_ymin", "corner_xmin_ymax", "corner_xmax_ymax"]
-        @test Set(group_names(res; dim=0)) == Set(vcat(["xmin", "xmax", "ymin", "ymax", "boundary", "corners"], corners))
+        @test cellgroups(0) == Set(vcat(["xmin", "xmax", "ymin", "ymax", "boundary", "corners"], corners))
         @test [group_tag(res, c; dim=0) for c in corners] == collect(31:34)
         @test [group_tag(res, f; dim=1) for f in ("xmin", "xmax", "ymin", "ymax")] == [1, 2, 3, 4]
         @test !any(startswith("edge_"), group_names(res))

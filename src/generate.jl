@@ -19,6 +19,7 @@ periodicity and mesh it. Gmsh is initialised and finalised automatically; the re
   can be used; close it with [`close_gmsh`](@ref).
 - `verbosity`: 0 silent, 1 summary, 2 Gmsh terminal output.
 - `name`: name of the Gmsh model (made unique if a model with that name is already open).
+- `interfaces`: create the interface physical groups (see below).
 
 The do-block form runs `f(res)` while the Gmsh model is alive, then closes Gmsh (unless
 `keep_open = true`); it returns `res`, not the value of `f`. In the live model the mesh is in
@@ -33,7 +34,20 @@ the options changed by `generate` are restored on return.
 Physical groups: one per phase (dimension `D`; matrix tag 1, phase `i` tag `1 + i`), and on
 the cell boundary `xmin, xmax, ymin, ymax, zmin, zmax` (tags 1-6, closed faces, defined in
 every lower dimension), `corners` (7), `boundary` (8), `edge_<face>_<face>` (11-22, 3D only)
-and `corner_<x>_<y>[_<z>]` (31-38). In 2D the faces are the four sides of the cell (curves
+and `corner_<x>_<y>[_<z>]` (31-38). Interfaces between phases (surfaces not on the cell faces
+whose two sides belong to different phases; one side `void` for free surfaces without
+matrix) get the groups `interface_<a>_<b>` (phases in the order of `phase_names(res)`; with
+`N` phases including the matrix and `i < j` their positions, `void` being `N + 1`, the tag is
+`100 + (i-1)(N+1) + j`) and their union `interfaces` (tag 99), defined in dimensions D-1 to 0
+(closed sets; closed surfaces such as a whole sphere contribute their seam curve and poles).
+In Gridap, `BoundaryTriangulation(model; tags = "interface_a_b")` gives the interface
+facets with the cells of one side chosen by Gridap (the orientation of the normal is not
+controlled: fine for areas, Dirichlet data and integrals of scalar facet quantities). For a
+one-sided trace use `BoundaryTriangulation(Triangulation(model, tags = "a"); tags =
+"interface_a_b")`; for jumps and normals oriented from one phase to the other use
+`InterfaceTriangulation(Triangulation(model, tags = "b"), Triangulation(model, tags = "a"))`
+(plus side in `b`), which does not need the interface groups. Facets on an interface carry
+the interface labels instead of the phase labels. In 2D the faces are the four sides of the cell (curves
 and points) and the mesh is made of triangles in the plane z = 0. Groups without entities are
 not created: with `matrix = nothing` the cell faces exist only where the phases touch them, and
 a periodic direction without any entity on its faces is reported with 0 pairs.
@@ -48,7 +62,8 @@ generate(f::Function, rve::RVE; kwargs...) = _generate(f, rve; kwargs...)
 
 function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), output=nothing,
                    geometry_only::Bool=false, check_periodicity::Bool=true, view::Bool=false,
-                   keep_open::Bool=false, verbosity::Integer=0, name::AbstractString="RVE") where {D}
+                   keep_open::Bool=false, verbosity::Integer=0, name::AbstractString="RVE",
+                   interfaces::Bool=true) where {D}
     if h !== nothing
         mesh.h === nothing || throw(ArgumentError("give the global size either as h or as mesh.h, not both"))
         mesh = _with(mesh; h=_positive(h, "h"))
@@ -69,6 +84,7 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
         groups = add_physical_groups!(rve, frame, part, on)
         set_periodicity!(rve, frame, on)
         ifs = classify_interfaces(part, on)
+        iinfo = interface_groups!(groups, rve, frame, part, ifs; create=interfaces)
         vdom = volume(rve)
         phases = PhaseInfo[]
         for (n, t, e) in zip(part.names, part.tags, part.entities)
@@ -101,7 +117,7 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
             gmsh.write(p)
             _physical_periodic_affine!(p, frame)
         end
-        res = RVEMesh{D}(rve, mesh, phases, groups, stats, checks, files, model)
+        res = RVEMesh{D}(rve, mesh, phases, groups, iinfo, stats, checks, files, model)
         verbosity >= 1 && @info sprint(show, MIME("text/plain"), res)
         f === nothing || f(res)
         if view

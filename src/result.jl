@@ -7,6 +7,20 @@ struct PhaseInfo
     fraction::Float64
 end
 
+"""
+An interface between two phases (`phases[2] == "void"` for free surfaces without matrix):
+its group name and tag (0 if groups were not created), its `(D-1)` entities and its area
+(length in 2D) in the units of the cell, computed by OpenCASCADE (accurate to ~1e-2 for
+B-spline surfaces such as ellipsoids, to round-off for analytic ones).
+"""
+struct InterfaceInfo
+    name::String
+    phases::Tuple{String,String}
+    tag::Int
+    entities::Vector{Int}
+    area::Float64
+end
+
 """A physical group of the generated model."""
 struct GroupInfo
     name::String
@@ -72,6 +86,7 @@ struct RVEMesh{D}
     options::MeshOptions
     phases::Vector{PhaseInfo}
     groups::Vector{GroupInfo}
+    interfaces::Vector{InterfaceInfo}
     stats::Union{Nothing,MeshStats}
     periodicity::Vector{PeriodicityCheck}
     files::Vector{String}
@@ -106,6 +121,27 @@ function quality_report(io::IO, r::RVEMesh{D}) where {D}
     end
     println(io, @sprintf("  worst element in phase %s at (%.4g, %.4g, %.4g)", s.worst_phase, s.worst_point...))
     return nothing
+end
+
+"""    interface_names(res)  Names of the interfaces `interface_<a>_<b>` between phases."""
+interface_names(r::RVEMesh) = [i.name for i in r.interfaces]
+
+function _interface(r::RVEMesh, a, b)
+    x, y = String(a), String(b)
+    for i in r.interfaces
+        (i.phases == (x, y) || i.phases == (y, x)) && return i
+    end
+    throw(KeyError("no interface between $x and $y (existing: $(join(interface_names(r), ", ")))"))
+end
+
+"""    interface_area(res, a, b)  Area (length in 2D) of the interface between phases `a` and `b` (either order; `:void` for free surfaces). See [`InterfaceInfo`](@ref RVEs.InterfaceInfo) for its accuracy."""
+interface_area(r::RVEMesh, a, b) = _interface(r, a, b).area
+
+"""    interface_tag(res, a, b)  Physical tag of the interface group between phases `a` and `b` (same in every dimension)."""
+function interface_tag(r::RVEMesh, a, b)
+    i = _interface(r, a, b)
+    i.tag == 0 && error("interface groups were not created (generate(...; interfaces = false))")
+    return i.tag
 end
 
 """    phase_names(res)  Names of the phases (matrix first, if any)."""
@@ -172,6 +208,9 @@ function Base.show(io::IO, ::MIME"text/plain", r::RVEMesh{D}) where {D}
                              s.min_quality, s.hmin, s.hmax),
                 s.order == 2 ? @sprintf(", min scaled Jacobian %.3f", s.min_jacobian) : "",
                 s.ninverted > 0 ? ", $(s.ninverted) INVERTED" : "")
+    end
+    if !isempty(r.interfaces)
+        println(io, "  interfaces: ", join((@sprintf("%s|%s %.4g", i.phases..., i.area) for i in r.interfaces), ", "))
     end
     if !isempty(r.periodicity)
         print(io, "  periodicity:")

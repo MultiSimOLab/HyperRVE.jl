@@ -40,6 +40,15 @@ function RVE(cell::Cell{D}, phases; matrix=:matrix, tiling=1, overlaps=:paint) w
         _isreserved(n) && throw(ArgumentError("phase name $(repr(n)) is reserved for boundary groups"))
     end
     allunique(names) || throw(ArgumentError("phase names must be unique, got $names"))
+    # interface group names interface_<a>_<b> must be unambiguous (names may contain '_')
+    ifn = [names; "void"]
+    seen = Dict{String,Tuple{String,String}}()
+    for i in eachindex(ifn), j in i+1:length(ifn)
+        n = "interface_" * ifn[i] * "_" * ifn[j]
+        haskey(seen, n) && throw(ArgumentError("phases $(seen[n]) and $((ifn[i], ifn[j])) would give the same " *
+                                               "interface group name $n; rename a phase"))
+        seen[n] = (ifn[i], ifn[j])
+    end
     t = tiling isa Integer ? ntuple(_ -> Int(tiling), D) :
         (length(tiling) == D && all(x -> x isa Integer, tiling) ? ntuple(i -> Int(tiling[i]), D) :
          throw(ArgumentError("tiling must be an integer or $D integers")))

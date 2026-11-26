@@ -9,9 +9,10 @@ corners = ["corner_x$(i)_y$(j)_z$(k)" for k in ("min", "max") for j in ("min", "
     generate(rve; geometry_only=true) do res
         @test sort(group_names(res; dim=3)) == ["matrix", "p"]
         @test group_tag(res, :matrix; dim=3) == 1 && group_tag(res, :p; dim=3) == 2
-        @test Set(group_names(res; dim=2)) == Set(vcat(faces, "boundary"))
-        @test Set(group_names(res; dim=1)) == Set(vcat(faces, "boundary", edges))
-        @test Set(group_names(res; dim=0)) == Set(vcat(faces, "boundary", edges, "corners", corners))
+        cellgroups(dim) = Set(filter(!startswith("interface"), group_names(res; dim=dim)))
+        @test cellgroups(2) == Set(vcat(faces, "boundary"))
+        @test cellgroups(1) == Set(vcat(faces, "boundary", edges))
+        @test cellgroups(0) == Set(vcat(faces, "boundary", edges, "corners", corners))
         for (i, f) in enumerate(faces), dim in 0:2
             @test group_tag(res, f; dim=dim) == i
         end
