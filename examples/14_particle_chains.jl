@@ -2,7 +2,7 @@
 # isotropic reference at the same volume fraction.
 using RVEs
 
-cell = Cell((1.0, 1.0, 1.0))
+cell = Cell((1.0, 1.0, 0.9))                           # 5 pitches of 2r + gap along z: no gap fitting
 r, g = 0.08, 0.02                                      # particle radius, gap inside a chain (0.25 r)
 
 chains = particle_chains(cell; axis = 3, radius = r, gap = g, fraction = 0.12, rng = 1)

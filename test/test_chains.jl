@@ -50,7 +50,8 @@ end
     @test_logs (:warn, r"gap grows") particle_chains(Cell((1.0, 1.0, 0.33)); radius=0.06, gap=0.012, n_chains=2, rng=1)
     @test_throws ArgumentError particle_chains(c; radius=0.06, gap=0.012, n_chains=2, fit=:strict)
     @test length(particle_chains(Cell((1.0, 1.0, 0.36)); radius=0.06, gap=0.06, n_chains=2, fit=:strict, face_gap=0.01, rng=1)) == 4
-    @test_throws ArgumentError particle_chains(Cell((1.0, 1.0, 0.36)); radius=0.06, gap=0.06, n_chains=2, rng=1)   # no axial offset fits the bands
+    @test length(particle_chains(Cell((1.0, 1.0, 0.36)); radius=0.06, gap=0.06, n_chains=2, rng=1)) == 4   # default axial band fits
+    @test length(particle_chains(c; radius=0.1, gap=0.05, n_chains=2, rng=1)) == 2 * floor(Int, 1 / 0.25)
     # free axis: whole chains inside, exact gap
     cf = Cell((1.0, 1.0, 1.0); periodic=(true, true, false))
     items = particle_chains(cf; radius=r, gap=g, n_chains=4, rng=1)
@@ -69,7 +70,7 @@ end
     z0 = Dict(round.(center(x)[1:2]; digits=9) => minimum(center(y)[3] for y in alt if round.(center(y)[1:2]; digits=9) == round.(center(x)[1:2]; digits=9)) for x in alt)
     p = 1 / floor(Int, 1 / 0.132)
     @test abs(mod(z0[(0.25, 0.25)] - z0[(0.75, 0.25)], p) - p / 2) < 1e-9
-    @test_logs (:warn, r"hexagonal") particle_chains(c; radius=0.05, gap=0.01, n_chains=(3, 3), arrangement=:hex)
+    @test_logs (:warn, r"hexagonal") match_mode = :any particle_chains(c; radius=0.05, gap=0.01, n_chains=(3, 3), arrangement=:hex)
     @test_throws ArgumentError particle_chains(c; radius=0.2, gap=0.01, n_chains=(3, 3), arrangement=:square)
     # occupancy
     full = particle_chains(c; radius=0.03, gap=0.006, n_chains=60, rng=4)
@@ -109,4 +110,29 @@ end
     c2 = Cell((1.0, 1.0))
     res = generate(RVE(c2, Phase(:p, particle_chains(c2; radius=0.06, gap=0.012, n_chains=3, rng=1); refine=0.006)); h=0.05)
     @test all(x -> x.ok, res.periodicity)
+end
+
+@testset "chains: review fixes" begin
+    c = unitcell()
+    # every particle respects the face, edge and corner bands
+    items = particle_chains(c; radius=0.06, gap=0.012, fraction=0.15, rng=7)
+    f = 0.012
+    for x in items
+        sd = min.(x.center, 1 .- x.center)
+        @test all(s -> s < 1e-12 || (abs(s - 0.06) >= f / 4 - 1e-12 && s >= f / 4 - 1e-12), sd)
+        @test all(abs(hypot(sd[i], sd[j]) - 0.06) >= f / 4 - 1e-12 for (i, j) in ((1, 2), (1, 3), (2, 3)) if sd[i] > 1e-12 && sd[j] > 1e-12)
+    end
+    # regular arrangements inside free faces; alternate warnings; own-image spacing
+    cl = Cell((1.0, 1.0, 1.0); periodic=(false, false, true))
+    @test_throws ArgumentError particle_chains(cl; radius=0.1, gap=0.02, n_chains=(2, 2), arrangement=:hex)
+    @test_logs (:warn, r"odd number") match_mode = :any particle_chains(c; radius=0.05, gap=0.01, n_chains=(3, 3), arrangement=:square, stagger=:alternate, rng=1)
+    @test_throws ArgumentError particle_chains(c; radius=0.495, gap=0.01, n_chains=1, arrangement=:square)
+    @test_throws ArgumentError particle_chains(c; radius=0.05, gap=0.01, n_chains=7, arrangement=:square)
+    # input validation
+    for kw in ((n_chains=(0, 2), arrangement=:square), (n_chains=(2.5, 2), arrangement=:square), (n_chains=true,),
+               (n_chains=(2, 2),), (fraction=2.0,), (fraction=0.1, chain_gap=:x), (fraction=0.1, face_gap=:x))
+        @test_throws ArgumentError particle_chains(c; radius=0.06, gap=0.012, kw...)
+    end
+    @test_throws ArgumentError particle_chains(cl; radius=0.06, gap=0.012, n_chains=2, fit=:strict, axis=3)
+    @test_throws ArgumentError particle_chains(c; radius=:a, gap=0.01, n_chains=2)
 end
