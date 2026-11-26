@@ -16,5 +16,6 @@ mesh next to the script.
 | `09_porous.jl` | no matrix: porous solid and its pore walls |
 | `10_strut_lattices.jl` | strut lattices: presets by density, in a matrix, custom topology, finite block |
 | `11_random_packings.jl` | random spheres (target fraction, size distribution), aligned fibres, disks |
+| `12_voronoi_polycrystal.jl` | periodic Voronoi polycrystal, grain groups, 2D tessellation |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.

@@ -107,6 +107,23 @@ Dense packings leave ligaments of width `min_gap` between inclusions: the mesh m
 them (`refine` on the phase or a smaller `h`), or raise `min_gap`; otherwise Gmsh may leave
 pieces unmeshed and `generate` reports it.
 
+## Voronoi polycrystals
+
+`voronoi(cell; n, rng)` (or `seeds = [...]`) computes a periodic Voronoi tessellation in pure
+Julia; `min_distance` keeps random seeds apart (default half the mean grain size, `0` for
+Poisson–Voronoi) and `lloyd = k` makes the grain sizes more uniform. `grain_phases(t)` gives one
+phase per grain (`grain_1`, …) made of a `Polyhedron` (2D: `Polygon`); use them without matrix:
+
+```julia
+t   = voronoi(Cell((1.0, 1.0, 1.0)); n = 20, rng = 1)
+rve = RVE(t.cell, grain_phases(t); matrix = nothing)
+```
+
+The grain boundaries are the interface groups `interface_grain_i_grain_j`. `groups` assigns
+grains to phases (`grain_phases(t; groups = [1, 2, 1, ...])`, fused per phase).
+`grain_volumes(t)` and `grains(t)` give the exact volumes and the polyhedra. Voronoi
+tessellations have very short edges; they mesh, but leave a few poor elements.
+
 ## Mesh control
 
 - `generate(rve; h)`: bulk size; `Phase(...; h)`: size inside a phase.
