@@ -26,9 +26,10 @@ Global meshing options, all lengths in the units of the cell.
   higher-order finite element spaces on it.
 - `algorithm`: 3D mesher, `:delaunay` (default), `:frontal` or `:hxt`; `surface_algorithm`:
   `:default`, `:frontal`, `:delaunay`, `:meshadapt` or `:automatic` (also used for 2D cells).
-  `:default` is Frontal-Delaunay, and the surfaces it leaves without elements (this happens
-  in Gmsh 4.15 on some B-spline surfaces: ellipsoids, scaled spheres and other dilated bodies)
-  are remeshed with MeshAdapt. With an explicit algorithm there is no such fallback.
+  `:default` is Frontal-Delaunay, with MeshAdapt on the B-spline surfaces (ellipsoids, bodies
+  transformed with `Scale`) of inclusions inside the cell, where Frontal-Delaunay gives poor
+  elements, and on any surface Frontal-Delaunay leaves without elements (Gmsh 4.15). With an
+  explicit algorithm there is no such fallback; an incomplete mesh is always an error.
 - `optimize`: optimisation of the linear mesh, `:default` (`true`), `:netgen` or `:none`
   (`false`); `:auto` (default) is `:netgen` for curved order-2 meshes (it removes the linear
   elements that would become inverted once curved) and `:default` otherwise. The Netgen

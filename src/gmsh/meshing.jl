@@ -37,7 +37,7 @@ function _level_size(ℓ, level, H)
 end
 
 function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{InterfaceSurface},
-               opts::MeshOptions) where {D}
+               opts::MeshOptions, on::BoundaryEntities=_boundary_entities(rve, frame)) where {D}
     f = gmsh.model.mesh.field
     S(x) = to_frame_length(frame, x)
     h = S(something(opts.h, minimum(rve.cell.size) / 10))
@@ -134,9 +134,19 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{Interf
     gmsh.option.setNumber("Mesh.ElementOrder", 1)          # generation is always linear
     try
         if D == 3 && opts.surface_algorithm == :default
-            # Gmsh 4.15's Frontal-Delaunay surface mesher sometimes produces no elements on
-            # B-spline surfaces (ellipsoids, scaled bodies). Mesh the surfaces first and remesh
-            # only the empty ones with MeshAdapt.
+            # Gmsh 4.15's Frontal-Delaunay surface mesher meshes B-spline surfaces (ellipsoids,
+            # scaled bodies) badly or not at all. (1) MeshAdapt for the B-spline surfaces of
+            # inclusion pieces inside the cell (better quality; pieces cut by a face keep
+            # Frontal-Delaunay, MeshAdapt there can break the periodic curves); (2) mesh the
+            # surfaces and remesh with MeshAdapt any surface left without elements.
+            onface(v) = any(f -> haskey(on.planes, (Int32(2), Int32(abs(f[2])))),
+                            gmsh.model.getBoundary([(3, v)], false, false, false))
+            for (_, t) in gmsh.model.getEntities(2)
+                gmsh.model.getType(2, t) == "BSpline surface" || continue
+                up, _ = gmsh.model.getAdjacencies(2, t)
+                pieces = [v for v in up if get(part.piece_item, Int32(v), (0, 0))[1] != 0]
+                any(onface, pieces) || gmsh.model.mesh.setAlgorithm(2, t, 1)
+            end
             gmsh.model.mesh.generate(2)
             empty = [t for (_, t) in gmsh.model.getEntities(2) if _nelements(2, t) == 0]
             if !isempty(empty)
@@ -210,29 +220,21 @@ function mesh_stats(frame::Frame{D}, opts::MeshOptions, part::Partition) where {
 end
 
 """
-Check that every phase is meshed: the mesh volume of its elements matches the volume of its
-geometry (within the faceting error). Gmsh can leave a surface without elements and still
-produce a mesh of the other volumes.
+Check that the mesh is complete: every surface (curve in 2D) and every volume (surface in 2D)
+of the model has elements. Gmsh can leave a surface without elements and still produce a mesh
+of the other volumes.
 """
 function check_completeness(frame::Frame{D}, part::Partition, phases, opts::MeshOptions) where {D}
-    bad = String[]
-    for (k, ents) in enumerate(part.entities)
-        v = phases[k].volume
-        v > 0 || continue
-        tags = Int[]
-        for e in ents
-            _, et, _ = gmsh.model.mesh.getElements(D, e)
-            for t in et
-                append!(tags, t)
-            end
-        end
-        vm = isempty(tags) ? 0.0 : sum(gmsh.model.mesh.getElementQualities(tags, "volume"))
-        # a volume bounded by a surface without elements gets no elements at all; coarse
-        # meshes of small curved inclusions can lose ~30 % of their volume to faceting
-        vm < 0.25 * v && push!(bad, "$(part.names[k]) (mesh $(round(vm; sigdigits=3)) of $(round(v; sigdigits=3)))")
+    empty_b = [t for (_, t) in gmsh.model.getEntities(D - 1) if _nelements(D - 1, t) == 0]
+    owner = Dict{Int32,String}()
+    for (k, ents) in enumerate(part.entities), e in ents
+        owner[e] = part.names[k]
     end
-    isempty(bad) && return nothing
+    empty_v = [owner[Int32(t)] for (_, t) in gmsh.model.getEntities(D) if _nelements(D, t) == 0 && haskey(owner, Int32(t))]
+    isempty(empty_b) && isempty(empty_v) && return nothing
     alg = opts.surface_algorithm == :default ? "" : ", or use surface_algorithm = :default or :meshadapt"
-    error("Gmsh did not mesh some phases completely: $(join(bad, ", ")). A surface probably has " *
-          "no elements; try a smaller h$alg.")
+    error("Gmsh did not mesh the RVE completely: " *
+          (isempty(empty_b) ? "" : "$(length(empty_b)) $(D == 3 ? "surfaces" : "curves") without elements; ") *
+          (isempty(empty_v) ? "" : "pieces of $(join(unique(empty_v), ", ")) without elements; ") *
+          "try a smaller h$alg.")
 end
