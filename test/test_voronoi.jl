@@ -59,7 +59,7 @@ end
     @test [volume(g, Symbol("grain_", i)) for i in 1:8] ≈ grain_volumes(t) atol = 1e-9
     res = generate(rve; h=0.1)
     @test all(x -> x.ok && x.npairs > 0, res.periodicity)
-    @test "interface_grain_1_grain_2" in interface_names(res) || length(interface_names(res)) > 8
+    @test length(interface_names(res)) > 8 && all(startswith("interface_grain_"), interface_names(res))
     # grain groups as fused phases, free faces
     t = voronoi(Cell((1.0, 1.0, 0.5); periodic=(true, true, false)); n=10, rng=3)
     res = generate(RVE(t.cell, grain_phases(t; groups=[mod1(i, 2) for i in 1:10]); matrix=nothing); h=0.1)
@@ -71,4 +71,58 @@ end
     res = generate(RVE(c2, grain_phases(t); matrix=nothing); h=0.04)
     @test [volume(res, Symbol("grain_", i)) for i in 1:12] ≈ grain_volumes(t) atol = 1e-9
     @test all(x -> x.ok, res.periodicity)
+end
+
+@testset "review fixes" begin
+    c = unitcell()
+    # perturbed regular lattices: the weld merges near-coincident vertices consistently
+    lattices = Dict(:cubic2 => [(x, y, z) for x in (0.25, 0.75) for y in (0.25, 0.75) for z in (0.25, 0.75)],
+                    :cubic3 => [(x, y, z) for x in (1, 3, 5) ./ 6 for y in (1, 3, 5) ./ 6 for z in (1, 3, 5) ./ 6],
+                    :fcc => [(0.0, 0.0, 0.0), (0.0, 0.5, 0.5), (0.5, 0.0, 0.5), (0.5, 0.5, 0.0)])
+    rng = RVEs.Random.Xoshiro(1)
+    nfail = 0
+    for (_, S) in lattices, a in (1e-11, 1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-3), _ in 1:3
+        seeds = [p .+ a .* (2 .* (rand(rng), rand(rng), rand(rng)) .- 1) for p in S]
+        try
+            t = voronoi(c; seeds)
+            g = grains(t)
+            abs(sum(grain_volumes(t)) - 1) < 1e-9 || (nfail += 1)
+        catch e
+            nfail += 1
+        end
+    end
+    @test nfail == 0
+    for a in (1e-8, 1e-7, 1e-6, 1e-4), _ in 1:3
+        S = [(x, y) .+ a .* (2 .* (rand(rng), rand(rng)) .- 1) for x in (1, 3, 5, 7) ./ 8 for y in (1, 3, 5, 7) ./ 8]
+        t = voronoi(Cell((1.0, 1.0)); seeds=S)
+        @test sum(grain_volumes(t)) ≈ 1 atol = 1e-9
+        @test length(grains(t)) == 16
+    end
+    # a periodic tessellation cut by free faces fills the cell
+    cn = Cell((1.0, 1.0, 1.0); periodic=false)
+    t = voronoi(cn; n=6, rng=1, periodic=true)
+    g = geo(RVE(cn, grain_phases(t); matrix=nothing))
+    @test sum(p.fraction for p in g.phases) ≈ 1 atol = 1e-8
+    @test [volume(g, Symbol("grain_", i)) for i in 1:6] ≈ grain_volumes(t) atol = 1e-8
+    c2 = Cell((1.0, 1.0); periodic=(true, false))
+    t = voronoi(c2; n=8, rng=2, periodic=true)
+    res = generate(RVE(c2, grain_phases(t); matrix=nothing); h=0.05)
+    @test sum(p.fraction for p in res.phases) ≈ 1 atol = 1e-8
+    # :auto distance in slender cells and with one seed
+    @test length(voronoi(Cell((2.0, 1.0, 0.5)); n=1).seeds) == 1
+    @test length(voronoi(Cell((1.0, 1.0, 0.05)); n=3, rng=1).seeds) == 3
+    @test length(voronoi(Cell((10.0, 1.0)); n=2, rng=1).seeds) == 2
+    # group labels
+    t = voronoi(c; n=4, rng=1)
+    @test [p.name for p in grain_phases(t; groups=[1, 3, 1, 3])] == ["grain_1", "grain_3"]
+    @test [p.name for p in grain_phases(t; groups=[:a, :b, :a, :b])] == ["a", "b"]
+    @test [p.name for p in grain_phases(t; groups=Any[2, 1, 2, 1], prefix="ph")] == ["ph_1", "ph_2"]
+    @test all(p -> p.fuse, grain_phases(t; groups=[1, 2, 1, 2]))
+    @test grain_phases(t; refine=0.01)[1].refine !== nothing
+    @test_throws ArgumentError grain_phases(t; groups=[1, 2, 1])
+    @test_throws ArgumentError grain_phases(t; groups=[true, false, true, false])
+    # input validation
+    @test_throws ArgumentError voronoi(c; seeds=[(0.5, 0.5, 0.5), (0.5, 0.5, 0.5 + 3e-8)])
+    @test_throws ArgumentError voronoi(c; n=4, periodic=(true, false))
+    @test_throws ArgumentError voronoi(c; n=true)
 end

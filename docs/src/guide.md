@@ -121,8 +121,13 @@ rve = RVE(t.cell, grain_phases(t); matrix = nothing)
 
 The grain boundaries are the interface groups `interface_grain_i_grain_j`. `groups` assigns
 grains to phases (`grain_phases(t; groups = [1, 2, 1, ...])`, fused per phase).
-`grain_volumes(t)` and `grains(t)` give the exact volumes and the polyhedra. Voronoi
-tessellations have very short edges; they mesh, but leave a few poor elements.
+`grain_volumes(t)` and `grains(t)` give the exact volumes and the polyhedra. `refine` and `h`
+are passed to every grain phase. `voronoi(cell; ..., periodic = true)` on a cell with free faces
+gives a block cut from a periodic tessellation. Random tessellations have very short edges;
+they mesh, but leave a few poor elements. Seeds on a regular lattice perturbed by less than
+about 1e-2 of the spacing give grain faces nearly coplanar with the cell faces, which Gmsh may
+fail to make periodic: use the exact lattice or a larger perturbation. Many grains give many
+interface groups (about 7 per grain).
 
 ## Mesh control
 
