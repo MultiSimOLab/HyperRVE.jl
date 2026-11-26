@@ -1,5 +1,5 @@
 # Unidirectional fibre composite: hexagonal packing of fibres along z, in a 3D cell.
-using RVEs
+using HyperRVE
 
 a = 1.0
 cell = Cell((a, sqrt(3) * a, 0.5a))

@@ -1,6 +1,6 @@
 # Mesh control: interface refinement, periodic size field, phase sizes, bounds.
 
-using RVEs: _image_shifts, classify_interfaces
+using HyperRVE: _image_shifts, classify_interfaces
 
 q(res) = res.stats.min_quality
 "Number of nodes on the plane x_d = c within distance `r` of the point `p` (3D or 2D)."
@@ -35,13 +35,13 @@ end
     generate(RVE(unitcell(), [Phase(:f, Fibre((0.5, 0.5, 0.5), (1, 0, 0), 0.2)),
                               Phase(:s, [Sphere((0.5, 0.15, 0.15), 0.1), Sphere((0.55, 0.15, 0.15), 0.1)])]);
              geometry_only=true) do res
-        part = RVEs.Partition(3, phase_names(res), [p.tag for p in res.phases], [Int32.(p.entities) for p in res.phases],
+        part = HyperRVE.Partition(3, phase_names(res), [p.tag for p in res.phases], [Int32.(p.entities) for p in res.phases],
                               Dict{Int32,Tuple{Int,Int}}())
         # rebuild piece ownership from the phases (items are not needed here)
         for (k, p) in enumerate(res.phases), e in p.entities
             part.piece_item[Int32(e)] = (k - 1, 1)
         end
-        on = RVEs._boundary_entities(res.rve, RVEs.Frame(res.rve))
+        on = HyperRVE._boundary_entities(res.rve, HyperRVE.Frame(res.rve))
         ifs = classify_interfaces(part, on)
         tags = Set(Int(s.tag) for s in ifs)
         faces = Set(Int(t) for ((d, t), ps) in on.planes if d == 2)

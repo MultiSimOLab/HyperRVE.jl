@@ -12,8 +12,8 @@ square() = Cell((1.0, 1.0))
     @test_throws ArgumentError Phase(:p, [Disk((0, 0), 1), Sphere((0, 0, 0), 1)])
     @test_throws ArgumentError RVE(square(), Phase(:p, Sphere((0.5, 0.5, 0.5), 0.1)))
     @test_throws ArgumentError RVE(Cell((1.0, 1.0, 1.0)), Phase(:p, Disk((0.5, 0.5), 0.1)))
-    @test RVEs.characteristic_length(Ellipse((0, 0), (0.3, 0.1))) == 0.1
-    @test RVEs.refpoint(Rectangle((0, 0), (2, 4))) == (1.0, 2.0)
+    @test HyperRVE.characteristic_length(Ellipse((0, 0), (0.3, 0.1))) == 0.1
+    @test HyperRVE.refpoint(Rectangle((0, 0), (2, 4))) == (1.0, 2.0)
 end
 
 @testset "areas (B1)" begin
@@ -53,7 +53,7 @@ end
         @test !any(startswith("edge_"), group_names(res))
         g(name, dim) = only(x for x in res.groups if x.name == name && x.dim == dim)
         @test length(g("corners", 0).entities) == 4
-        s = RVEs.Frame(res.rve).scale
+        s = HyperRVE.Frame(res.rve).scale
         len(name) = s * sum(gmsh.model.occ.getMass(1, t) for t in g(name, 1).entities)
         @test len("xmin") ≈ 1.0 rtol = 1e-9
         @test len("ymax") ≈ 2.0 rtol = 1e-9
@@ -155,7 +155,7 @@ end
 @testset "side and corner positions (T3)" begin
     cell = Cell((2.0, 1.0); origin=(1.0, -1.0))
     generate(RVE(cell, Phase(:p, Disk(cellpoint(cell, (0.5, 0.5)), 0.2))); geometry_only=true) do res
-        fr = RVEs.Frame(res.rve)
+        fr = HyperRVE.Frame(res.rve)
         phys(x) = fr.origin .+ fr.scale .* x
         g(name, dim) = only(x for x in res.groups if x.name == name && x.dim == dim)
         for (name, d, val) in (("xmin", 1, 1.0), ("xmax", 1, 3.0), ("ymin", 2, -1.0), ("ymax", 2, 0.0))

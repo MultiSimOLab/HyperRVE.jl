@@ -1,6 +1,6 @@
 # Mesh control: phase sizes, interface refinement with grading, a refined inclusion close to
 # a periodic face (the size field is periodic), order-2 elements and the quality report.
-using RVEs
+using HyperRVE
 
 cell = Cell((1.0, 1.0, 1.0))
 rve = RVE(cell, [Phase(:stiff, Sphere((0.78, 0.5, 0.5), 0.2); refine = (h = 0.02, growth = 1.25)),

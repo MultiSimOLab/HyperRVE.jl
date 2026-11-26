@@ -79,7 +79,7 @@ end
     lattices = Dict(:cubic2 => [(x, y, z) for x in (0.25, 0.75) for y in (0.25, 0.75) for z in (0.25, 0.75)],
                     :cubic3 => [(x, y, z) for x in (1, 3, 5) ./ 6 for y in (1, 3, 5) ./ 6 for z in (1, 3, 5) ./ 6],
                     :fcc => [(0.0, 0.0, 0.0), (0.0, 0.5, 0.5), (0.5, 0.0, 0.5), (0.5, 0.5, 0.0)])
-    rng = RVEs.Random.Xoshiro(1)
+    rng = HyperRVE.Random.Xoshiro(1)
     nfail = 0
     for (_, S) in lattices, a in (1e-11, 1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-3), _ in 1:3
         seeds = [p .+ a .* (2 .* (rand(rng), rand(rng), rand(rng)) .- 1) for p in S]

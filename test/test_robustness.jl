@@ -1,4 +1,4 @@
-# Regression tests from the review of the 0.2 rewrite.
+# Regression tests from the review of the rewrite.
 
 @testset "small inclusion with a coarse global size (no refine)" begin
     for (r, h) in ((0.03, nothing), (0.05, 0.2), (0.1, 0.25), (0.2, 0.5))
@@ -87,7 +87,7 @@ end
 @testset "verification detects non-periodic meshes" begin
     per = RVE(unitcell(), Phase(:p, Sphere((0, 0.5, 0.5), 0.25)))
     generate(RVE(unitcell(periodic=false), Phase(:p, Sphere((0, 0.5, 0.5), 0.25))); h=0.15) do res
-        @test_throws PeriodicityError RVEs.verify_periodicity(per, RVEs.Frame(per))
+        @test_throws PeriodicityError HyperRVE.verify_periodicity(per, HyperRVE.Frame(per))
     end
 end
 
@@ -113,7 +113,7 @@ end
     # caller-owned session: options and current model restored; write_mesh still writes 4.1
     gmsh.initialize(String[], false)
     try
-        opts = RVEs._SESSION_OPTIONS
+        opts = HyperRVE._SESSION_OPTIONS
         gmsh.option.setNumber("General.Terminal", 0)
         gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
         gmsh.model.add("mine")

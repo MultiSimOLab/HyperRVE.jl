@@ -1,5 +1,5 @@
 # A 3 x 3 x 3 supercell of a unit cell containing a rotated ellipsoid.
-using RVEs
+using HyperRVE
 
 cell = Cell((1.0, 1.0, 1.0))
 e = Rotate(Ellipsoid(cellpoint(cell, (0.5, 0.5, 0.5)), (0.35, 0.12, 0.12)); axis = (1, 1, 0), angle = π / 4)

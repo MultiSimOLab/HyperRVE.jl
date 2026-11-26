@@ -1,6 +1,6 @@
 # Random packings: particles at a target volume fraction, a size distribution, fibres and
 # disks. A seed (rng = ...) makes each packing reproducible.
-using RVEs
+using HyperRVE
 
 cell = Cell((1.0, 1.0, 1.0))
 

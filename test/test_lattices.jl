@@ -109,7 +109,7 @@ end
     end
     @test sort(deg) == [4, 4, 4, 12]                    # corner to the 12 face centres
     for k in (:cubic, :bcc, :fcc, :octet, :kelvin, :diamond)
-        xm = RVEs._DENSITY[k][3]
+        xm = HyperRVE._DENSITY[k][3]
         @test relative_density(k, strut_radius(k, relative_density(k, xm))) ≈ relative_density(k, xm)
     end
     @test_throws ArgumentError lattice(unitcell(), :bcc; radius=0.05, density=0.1)
@@ -121,7 +121,7 @@ end
 end
 
 @testset "pruning of covered strut copies" begin
-    slab = RVEs._cylinder_slab
+    slab = HyperRVE._cylinder_slab
     lo, hi = (0.0, 0.0, 0.0), (1.0, 1.0, 1.0)
     @test slab((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.5, 0.05, lo, hi, 1e-9) == (0.0, 0.0)          # leaves at a corner
     t = slab((0.0, 0.0, 0.0), (1.0, -1.0, 0.0) ./ sqrt(2), 0.5, 0.05, lo, hi, 1e-9)
@@ -130,7 +130,7 @@ end
     @test all(slab((0.3, 0.3, 0.3), (0.0, 0.0, 1.0), 0.4, 0.05, lo, hi, 1e-9) .≈ (0.0, 0.4))       # inside
     @test slab((3.0, 3.0, 3.0), (0.0, 0.0, 1.0), 0.4, 0.05, lo, hi, 1e-9) === nothing                # far away
     # brute force: every sampled point of the cylinder inside the box has its axial coordinate in the slab
-    rng = RVEs.Random.Xoshiro(1)
+    rng = HyperRVE.Random.Xoshiro(1)
     for _ in 1:20
         a = Tuple(2 .* rand(rng, 3) .- 0.5); d = Tuple(randn(rng, 3)); d = d ./ sqrt(sum(abs2, d))
         L, r = 0.2 + rand(rng), 0.02 + 0.1rand(rng)
@@ -144,7 +144,7 @@ end
         end
     end
     # nearly axial struts close to a face (the slice distance must not report a miss)
-    sd = RVEs._slice_dist
+    sd = HyperRVE._slice_dist
     ε = 1e-3
     @test sd((0.5, 1 + 2e-5, 0.5), (ε, sqrt(1 - ε^2), 0.0), lo, hi) < 0.03
     for _ in 1:200
@@ -167,11 +167,11 @@ end
     c = unitcell()
     for (k, x) in ((:bcc, 0.08), (:cubic, 0.1))
         v = map((true, false)) do p
-            RVEs._PRUNE[] = p
+            HyperRVE._PRUNE[] = p
             try
                 volume_fraction(geo(RVE(c, Phase(:l, lattice(c, k; radius=x); fuse=true); matrix=nothing)), :l)
             finally
-                RVEs._PRUNE[] = true
+                HyperRVE._PRUNE[] = true
             end
         end
         @test v[1] ≈ v[2] rtol = 1e-7

@@ -1,7 +1,7 @@
 # User guide
 
 ```@meta
-CurrentModule = RVEs
+CurrentModule = HyperRVE
 ```
 
 ## Workflow
@@ -13,7 +13,7 @@ CurrentModule = RVEs
 4. Call [`generate`](@ref), which returns an [`RVEMesh`](@ref) and writes the mesh files.
 
 ```julia
-using RVEs
+using HyperRVE
 cell = Cell((1.0, 1.0, 1.0))
 rve  = RVE(cell, Phase(:particles, [Sphere((0.5, 0.5, 0.5), 0.25), Sphere((0, 0, 0), 0.25)]; refine = 0.03))
 res  = generate(rve; h = 0.1, output = "bcc.msh")

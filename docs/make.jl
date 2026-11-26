@@ -1,14 +1,14 @@
-using RVEs
+using HyperRVE
 using Documenter
 
-DocMeta.setdocmeta!(RVEs, :DocTestSetup, :(using RVEs); recursive=true)
+DocMeta.setdocmeta!(HyperRVE, :DocTestSetup, :(using HyperRVE); recursive=true)
 
 makedocs(;
-    modules=[RVEs],
+    modules=[HyperRVE],
     authors="MultiSimO Lab",
-    sitename="RVEs.jl",
+    sitename="HyperRVE.jl",
     format=Documenter.HTML(;
-        canonical="https://multisimolab.github.io/RVEs.jl",
+        canonical="https://multisimolab.github.io/HyperRVE.jl",
         edit_link="main",
         assets=String[],
     ),
@@ -17,4 +17,4 @@ makedocs(;
     warnonly=[:missing_docs],
 )
 
-deploydocs(; repo="github.com/MultiSimOLab/RVEs.jl", devbranch="main")
+deploydocs(; repo="github.com/MultiSimOLab/HyperRVE.jl", devbranch="main")

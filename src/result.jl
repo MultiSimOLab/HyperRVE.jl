@@ -134,7 +134,7 @@ function _interface(r::RVEMesh, a, b)
     throw(KeyError("no interface between $x and $y (existing: $(join(interface_names(r), ", ")))"))
 end
 
-"""    interface_area(res, a, b)  Area (length in 2D) of the interface between phases `a` and `b` (either order; `:void` for free surfaces). See [`InterfaceInfo`](@ref RVEs.InterfaceInfo) for its accuracy."""
+"""    interface_area(res, a, b)  Area (length in 2D) of the interface between phases `a` and `b` (either order; `:void` for free surfaces). See [`InterfaceInfo`](@ref HyperRVE.InterfaceInfo) for its accuracy."""
 interface_area(r::RVEMesh, a, b) = _interface(r, a, b).area
 
 """    interface_tag(res, a, b)  Physical tag of the interface group between phases `a` and `b` (same in every dimension)."""
