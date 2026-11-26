@@ -7,7 +7,7 @@ _ballvol(::Val{3}, r) = 4π * r^3 / 3
 _ballvol(::Val{2}, r) = π * r^2
 
 _rng(rng::AbstractRNG) = rng
-_rng(seed::Integer) = Random.Xoshiro(seed)
+_rng(seed::Integer) = seed >= 0 ? Random.Xoshiro(seed) : throw(ArgumentError("rng: a seed must be >= 0, got $seed"))
 _rng(x) = throw(ArgumentError("rng must be an AbstractRNG or an integer seed, got $(typeof(x))"))
 
 """
@@ -15,6 +15,10 @@ Radii (decreasing) of the packing from the keyword combination; `V` is the volum
 of the region, `what` names the caller in errors.
 """
 function _radii(::Val{D}, rng, V, radius, fraction, n, what) where {D}
+    fraction === nothing || fraction isa Real ||
+        throw(ArgumentError("$what: fraction must be a number in (0, 1), got $(repr(fraction))"))
+    n === nothing || (n isa Integer && !(n isa Bool)) ||
+        throw(ArgumentError("$what: n must be an integer, got $(repr(n))"))
     fraction === nothing || 0 < fraction < 1 ||
         throw(ArgumentError("$what: fraction must be in (0, 1), got $fraction"))
     n === nothing || n >= 1 || throw(ArgumentError("$what: n must be at least 1, got $n"))
@@ -33,7 +37,7 @@ function _radii(::Val{D}, rng, V, radius, fraction, n, what) where {D}
         (fraction !== nothing && n !== nothing) ||
             throw(ArgumentError("$what: give exactly two of radius, fraction and n"))
         r = fill((fraction * V / (n * _ballvol(Val(D), 1.0)))^(1 / D), Int(n))
-    elseif radius isa Function
+    elseif !(radius isa AbstractString || radius isa Symbol)          # a sampler: any callable rng -> r
         fraction !== nothing || n !== nothing ||
             throw(ArgumentError("$what: a radius sampler needs fraction or n"))
         (fraction === nothing) != (n === nothing) ||
@@ -131,24 +135,34 @@ end
 function _packing(::Val{D}, what, L, per, V, radius, fraction, n, min_gap, face_gap, boundary, rng, max_tries, strict) where {D}
     rng = _rng(rng)
     boundary in (:periodic, :inside) || throw(ArgumentError("$what: boundary must be :periodic or :inside, got $(repr(boundary))"))
+    max_tries isa Integer && max_tries >= 1 || throw(ArgumentError("$what: max_tries must be a positive integer, got $(repr(max_tries))"))
     radii = _radii(Val(D), rng, V, radius, fraction, n, what)
-    gap = min_gap === :auto ? 0.1 * radii[end] : Float64(min_gap)
-    gap >= 0 || throw(ArgumentError("$what: min_gap must be >= 0"))
-    fgap = face_gap === :auto ? gap : Float64(face_gap)
-    fgap >= 0 || throw(ArgumentError("$what: face_gap must be >= 0"))
-    2radii[1] + gap < minimum(L) ||
-        throw(ArgumentError("$what: the largest inclusion (diameter $(2radii[1]) plus min_gap) does not fit in the cell"))
-    eff = sum(_ballvol(Val(D), r + gap / 2) for r in radii) / V
-    if radius isa Real || radius === nothing
-        eff <= _SAT[D] || throw(ArgumentError(@sprintf("%s: %d inclusions with min_gap %.3g need an effective fraction %.3f, above the random sequential addition limit %.3f; reduce fraction, n or min_gap",
-                                                        what, length(radii), gap, eff, _SAT[D])))
+    gap = min_gap === :auto ? 0.1 * radii[end] :
+          min_gap isa Real && isfinite(min_gap) && min_gap >= 0 ? Float64(min_gap) :
+          throw(ArgumentError("$what: min_gap must be :auto or a finite number >= 0, got $(repr(min_gap))"))
+    fgap = face_gap === :auto ? gap :
+           face_gap isa Real && isfinite(face_gap) && face_gap >= 0 ? Float64(face_gap) :
+           throw(ArgumentError("$what: face_gap must be :auto or a finite number >= 0, got $(repr(face_gap))"))
+    inside = boundary === :inside
+    for d in 1:D
+        room = inside ? 2radii[1] + 2fgap : per[d] ? 2radii[1] + gap : 2radii[1]
+        room < L[d] || throw(ArgumentError("$what: the largest inclusion (diameter $(2radii[1])" *
+                                           (inside ? " plus 2 face_gap" : per[d] ? " plus min_gap" : "") *
+                                           ") does not fit in the cell along direction $d"))
     end
-    X = _rsa(rng, Tuple(Float64.(L)), per, radii, gap, fgap, boundary === :inside, max_tries)
+    # random sequential addition saturates at φ_sat (equal sizes, many inclusions); with few
+    # inclusions (n <= 2) or with free faces (inclusions may stick out) it does not apply
+    eff = sum(_ballvol(Val(D), r + gap / 2) for r in radii) / V
+    if (radius isa Real || radius === nothing) && length(radii) >= 3 && all(per)
+        eff <= _SAT[D] || throw(ArgumentError(@sprintf("%s: %d inclusions with min_gap %.3g need an effective fraction %.3f, above the random sequential addition limit %.3f (in practice about %.2f is reachable with this gap); reduce fraction, n or min_gap",
+                                                        what, length(radii), gap, eff, _SAT[D], 0.9 * _SAT[D] / (1 + gap / (2radii[end]))^D)))
+    end
+    X = _rsa(rng, Tuple(Float64.(L)), per, radii, gap, fgap, inside, max_tries)
     if length(X) < length(radii)
         got = sum(_ballvol(Val(D), r) for r in radii[1:length(X)]; init=0.0) / V
         want = sum(_ballvol(Val(D), r) for r in radii) / V
-        msg = @sprintf("%s: placed %d of %d inclusions (fraction %.3f of the requested %.3f) after %d attempts for the next one. Random sequential addition saturates at about %.2f for equal %s (less with min_gap); reduce fraction, min_gap or face_gap, or use a size distribution",
-                       what, length(X), length(radii), got, want, max_tries, _SAT[D], D == 3 ? "spheres" : "disks")
+        msg = @sprintf("%s: placed %d of %d inclusions (fraction %.3f of the requested %.3f) after %d attempts for the next one. Random sequential addition reaches about %.2f for equal %s with this min_gap; reduce fraction, min_gap or face_gap, or use a size distribution",
+                       what, length(X), length(radii), got, want, max_tries, 0.9 * _SAT[D] / (1 + gap / (2radii[end]))^D, what == "random_spheres" ? "spheres" : what == "random_fibres" ? "fibres" : "disks")
         strict ? error(msg) : @warn(msg)
     end
     return X, radii[1:length(X)]
@@ -169,7 +183,12 @@ Non-overlapping spheres placed by random sequential addition. Give exactly two o
   periodicity failures). `face_gap = 0` switches it off.
 - `boundary = :periodic`: spheres cross the faces and `generate` completes them; `:inside`:
   every sphere stays `face_gap` away from the faces (no cut spheres; leaves a depleted layer
-  near the walls). Along non-periodic directions there is no wrap-around.
+  near the walls). Along non-periodic directions there is no wrap-around: with `:periodic` the
+  spheres may cross those faces and are cut there, so the fraction inside the cell is somewhat
+  below `fraction` (use `:inside` to keep them whole).
+- With a radius sampler and `fraction`, radii are drawn until the next one would exceed the
+  target: the packing stays at or below `fraction`. `volume_fraction(items, cell)` gives the
+  value of the returned inclusions.
 - `rng`: an `AbstractRNG` or an integer seed; same seed and Julia version, same packing.
 
 Achievable fractions with equal spheres: about 0.35 (`min_gap = 0`), 0.30 (`0.1 r`), 0.26
@@ -179,7 +198,7 @@ partial packing). Put the result in a phase without `fuse`:
 """
 function random_spheres(cell::Cell{3}; radius=nothing, fraction=nothing, n=nothing, min_gap=:auto, face_gap=:auto,
                         boundary=:periodic, rng=Random.default_rng(), max_tries=50_000, strict=true)
-    per = map(p -> p && boundary === :periodic, cell.periodic)
+    per = cell.periodic
     X, r = _packing(Val(3), "random_spheres", Tuple(cell.size), per, volume(cell), radius, fraction, n,
                     min_gap, face_gap, boundary, rng, max_tries, strict)
     return [Sphere(cell.origin .+ x, ri) for (x, ri) in zip(X, r)]
@@ -193,7 +212,7 @@ about 0.50 (`min_gap = 0`), 0.48 (`0.1 r`), 0.45 (`0.2 r`).
 """
 function random_disks(cell::Cell{2}; radius=nothing, fraction=nothing, n=nothing, min_gap=:auto, face_gap=:auto,
                       boundary=:periodic, rng=Random.default_rng(), max_tries=50_000, strict=true)
-    per = map(p -> p && boundary === :periodic, cell.periodic)
+    per = cell.periodic
     X, r = _packing(Val(2), "random_disks", Tuple(cell.size), per, volume(cell), radius, fraction, n,
                     min_gap, face_gap, boundary, rng, max_tries, strict)
     return [Disk(cell.origin .+ x, ri) for (x, ri) in zip(X, r)]
@@ -202,15 +221,15 @@ end
 """
     random_fibres(cell; axis = 3, radius, fraction, n, ...) -> Vector{Fibre}
 
-Infinite fibres parallel to the cell axis `axis`, from a random disk packing of the
-cross-section (keywords as [`random_spheres`](@ref); `fraction` is the fibre volume fraction).
+Infinite fibres parallel to the cell axis `axis` (each given by its point on the mid-plane of
+the cell), from a random disk packing of the cross-section (keywords as [`random_spheres`](@ref); `fraction` is the fibre volume fraction).
 """
 function random_fibres(cell::Cell{3}; axis=3, radius=nothing, fraction=nothing, n=nothing, min_gap=:auto,
                        face_gap=:auto, boundary=:periodic, rng=Random.default_rng(), max_tries=50_000, strict=true)
-    axis in 1:3 || throw(ArgumentError("random_fibres: axis must be 1, 2 or 3, got $axis"))
+    axis isa Integer && !(axis isa Bool) && axis in 1:3 || throw(ArgumentError("random_fibres: axis must be 1, 2 or 3, got $axis"))
     t = Tuple(d for d in 1:3 if d != axis)
     L = (cell.size[t[1]], cell.size[t[2]])
-    per = (cell.periodic[t[1]] && boundary === :periodic, cell.periodic[t[2]] && boundary === :periodic)
+    per = (cell.periodic[t[1]], cell.periodic[t[2]])
     X, r = _packing(Val(2), "random_fibres", L, per, L[1] * L[2], radius, fraction, n,
                     min_gap, face_gap, boundary, rng, max_tries, strict)
     e = ntuple(d -> d == axis ? 1.0 : 0.0, 3)
@@ -230,12 +249,20 @@ end
 Sum of the volumes (areas in 2D) of non-overlapping spheres, disks or fibres divided by the
 cell volume, as returned by the random packings (fibres span the cell along their axis).
 """
-function volume_fraction(items::AbstractVector{<:Union{Sphere,Disk,Fibre}}, cell::Cell)
+function volume_fraction(items::AbstractVector{<:Geometry}, cell::Cell{D}) where {D}
     v = 0.0
     for it in items
-        v += it isa Sphere ? 4π * it.radius^3 / 3 :
-             it isa Disk ? π * it.radius^2 :
-             π * it.radius^2 * cell.size[argmax(abs.(it.direction))]
+        if it isa Sphere && D == 3
+            v += 4π * it.radius^3 / 3
+        elseif it isa Disk && D == 2
+            v += π * it.radius^2
+        elseif it isa Fibre && D == 3
+            a = findfirst(x -> abs(abs(x) - 1) < 1e-12, it.direction)
+            a === nothing && throw(ArgumentError("volume_fraction: only fibres parallel to a cell axis are supported"))
+            v += π * it.radius^2 * cell.size[a]
+        else
+            throw(ArgumentError("volume_fraction(items, cell): items must be spheres or fibres (3D cell) or disks (2D cell), got $(nameof(typeof(it))) in a $(D)D cell"))
+        end
     end
     return v / volume(cell)
 end

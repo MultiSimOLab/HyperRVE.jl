@@ -95,10 +95,13 @@ Give two of `radius`, `fraction` and `n`, a vector of radii, or a sampler `rng -
 `fraction` or `n`. `min_gap` (default `0.1 *` the smallest radius) keeps the surfaces apart;
 `face_gap` (default `min_gap`) rejects inclusions nearly tangent to a face, edge or corner of
 the cell, or centred nearly on a face plane: these give slivers and Gmsh periodicity failures.
-`boundary = :inside` keeps every inclusion inside the cell. `rng` is an `AbstractRNG` or an
+`boundary = :inside` keeps every inclusion inside the cell (leaving an inclusion-free layer
+next to the faces); along non-periodic directions `:periodic` lets inclusions cross the face, where
+they are cut. `volume_fraction(items, cell)` gives the fraction of the returned inclusions. `rng` is an `AbstractRNG` or an
 integer seed. Random sequential addition saturates at about 0.38 for equal spheres and 0.55 for
 equal disks (less with gaps: about 0.30 and 0.48 with the default `min_gap`); above that the
-call fails with what it placed (`strict = false`: warning and partial packing).
+call fails (an `ErrorException`) with what it placed (`strict = false`: warning and partial
+packing).
 Dense packings leave ligaments of width `min_gap` between inclusions: the mesh must resolve
 them (`refine` on the phase or a smaller `h`), or raise `min_gap`; otherwise Gmsh may leave
 pieces unmeshed and `generate` reports it.

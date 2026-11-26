@@ -79,3 +79,40 @@ end
     res = generate(RVE(c2, Phase(:d, random_disks(c2; radius=0.07, fraction=0.35, rng=12))); h=0.04)
     @test all(x -> x.ok, res.periodicity)
 end
+
+struct _ConstRadius end
+(::_ConstRadius)(rng) = 0.05
+
+@testset "review fixes" begin
+    c = unitcell()
+    # volume_fraction: wrong dimensions, oblique fibres, mixed vectors
+    @test_throws ArgumentError volume_fraction([Fibre((0.5, 0.5, 0.5), (1, 1, 0), 0.1)], c)
+    @test_throws ArgumentError volume_fraction([Disk((0.5, 0.5), 0.1)], c)
+    @test_throws ArgumentError volume_fraction([Sphere((0.5, 0.5, 0.5), 0.1)], Cell((1.0, 1.0)))
+    @test volume_fraction(Geometry{3}[Sphere((0.2, 0.2, 0.2), 0.1), Fibre((0.6, 0.6, 0.5), (0, 0, 1), 0.1)], c) ≈ 4π * 0.001 / 3 + π * 0.01
+    # few inclusions are not rejected by the asymptotic saturation check
+    @test length(random_spheres(Cell((1.0, 1.0, 1.0); periodic=false); radius=0.1, fraction=0.4, min_gap=0, face_gap=0, rng=1)) == 95
+    @test length(random_spheres(c; fraction=0.4, n=1, rng=1)) == 1
+    @test length(random_spheres(c; radius=0.37, n=2, rng=1, face_gap=0)) == 2
+    # malformed keywords are ArgumentErrors
+    for kw in ((radius=0.1, n=2.5), (radius=0.1, fraction="a"), (radius=0.1, n=2, min_gap=:foo),
+               (radius=0.1, n=2, max_tries=0), (radius=0.1, n=2, max_tries=1.5), (radius=0.1, n=2, face_gap=Inf),
+               (radius=0.3, n=1, boundary=:inside, face_gap=0.3))
+        @test_throws ArgumentError random_spheres(c; rng=1, kw...)
+        nothing
+    end
+    @test_throws ArgumentError random_spheres(c; radius=0.1, n=2, rng=-1)
+    @test_throws ArgumentError random_fibres(c; axis=true, radius=0.1, n=2)
+    @test_throws ArgumentError random_fibres(c; axis=3.0, radius=0.1, n=2)
+    # callable samplers that are not Functions
+    @test length(random_spheres(c; radius=_ConstRadius(), n=5, rng=1)) == 5
+    # :inside keeps min_gap across periodic images too
+    s = random_spheres(c; radius=0.1, fraction=0.2, boundary=:inside, face_gap=0, min_gap=0.02, rng=3)
+    @test min_image_gap(s, c) >= 0.02 - 1e-12
+    # integer seed and Xoshiro(seed) give the same packing; edge band
+    @test random_spheres(c; radius=0.08, n=10, rng=3) == random_spheres(c; radius=0.08, n=10, rng=RVEs.Random.Xoshiro(3))
+    for x in random_spheres(c; radius=0.1, fraction=0.2, rng=5)
+        t = min.(x.center, 1 .- x.center)
+        @test all(abs(hypot(t[a], t[b]) - 0.1) >= 0.01 - 1e-12 for (a, b) in ((1, 2), (1, 3), (2, 3)))
+    end
+end
