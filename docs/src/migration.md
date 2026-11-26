@@ -15,6 +15,7 @@ Version 2 replaces the whole public API. The table maps every old call to its re
 | `visualizeMesh()` | `generate(rve; view = true)` or `view_mesh(res)` |
 | groups `Phase0`, `Phase<i>`, `Inclusions` | the matrix name and the phase names (no union group) |
 | `Surfxmin`/`Linesxmin`/`Pointsxmin`, `Corners` | `xmin` (in dimensions 2, 1, 0), `corners` |
+| (none) | `interface_<a>_<b>` (tags from 102) and `interfaces` (99): interfaces between phases |
 | one group per inclusion | one group per phase (put inclusions in separate phases to keep them apart) |
 
 Behaviour changes:

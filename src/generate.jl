@@ -36,9 +36,18 @@ the cell boundary `xmin, xmax, ymin, ymax, zmin, zmax` (tags 1-6, closed faces, 
 every lower dimension), `corners` (7), `boundary` (8), `edge_<face>_<face>` (11-22, 3D only)
 and `corner_<x>_<y>[_<z>]` (31-38). Interfaces between phases (surfaces not on the cell faces
 whose two sides belong to different phases; one side `void` for free surfaces without
-matrix) get the groups `interface_<a>_<b>` (phases in the order of `phase_names(res)`, tag
-`100 + (i-1)(N+1) + j` from their positions) and their union `interfaces` (tag 99), defined
-in dimensions D-1 to 0 (closed sets). In 2D the faces are the four sides of the cell (curves
+matrix) get the groups `interface_<a>_<b>` (phases in the order of `phase_names(res)`; with
+`N` phases including the matrix and `i < j` their positions, `void` being `N + 1`, the tag is
+`100 + (i-1)(N+1) + j`) and their union `interfaces` (tag 99), defined in dimensions D-1 to 0
+(closed sets; closed surfaces such as a whole sphere contribute their seam curve and poles).
+In Gridap, `BoundaryTriangulation(model; tags = "interface_a_b")` gives the interface
+facets with the cells of one side chosen by Gridap (the orientation of the normal is not
+controlled: fine for areas, Dirichlet data and integrals of scalar facet quantities). For a
+one-sided trace use `BoundaryTriangulation(Triangulation(model, tags = "a"); tags =
+"interface_a_b")`; for jumps and normals oriented from one phase to the other use
+`InterfaceTriangulation(Triangulation(model, tags = "b"), Triangulation(model, tags = "a"))`
+(plus side in `b`), which does not need the interface groups. Facets on an interface carry
+the interface labels instead of the phase labels. In 2D the faces are the four sides of the cell (curves
 and points) and the mesh is made of triangles in the plane z = 0. Groups without entities are
 not created: with `matrix = nothing` the cell faces exist only where the phases touch them, and
 a periodic direction without any entity on its faces is reported with 0 pairs.

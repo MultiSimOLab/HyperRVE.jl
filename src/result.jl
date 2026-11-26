@@ -10,7 +10,8 @@ end
 """
 An interface between two phases (`phases[2] == "void"` for free surfaces without matrix):
 its group name and tag (0 if groups were not created), its `(D-1)` entities and its area
-(length in 2D) in the units of the cell.
+(length in 2D) in the units of the cell, computed by OpenCASCADE (accurate to ~1e-2 for
+B-spline surfaces such as ellipsoids, to round-off for analytic ones).
 """
 struct InterfaceInfo
     name::String
@@ -133,7 +134,7 @@ function _interface(r::RVEMesh, a, b)
     throw(KeyError("no interface between $x and $y (existing: $(join(interface_names(r), ", ")))"))
 end
 
-"""    interface_area(res, a, b)  Area (length in 2D) of the interface between phases `a` and `b` (either order; `:void` for free surfaces)."""
+"""    interface_area(res, a, b)  Area (length in 2D) of the interface between phases `a` and `b` (either order; `:void` for free surfaces). See [`InterfaceInfo`](@ref RVEs.InterfaceInfo) for its accuracy."""
 interface_area(r::RVEMesh, a, b) = _interface(r, a, b).area
 
 """    interface_tag(res, a, b)  Physical tag of the interface group between phases `a` and `b` (same in every dimension)."""

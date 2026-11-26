@@ -58,7 +58,6 @@ end
         u = union((g(n, 2) for n in interface_names(res))...)
         @test g("interfaces", 2) == u
         for dim in 0:3
-            tags = [x.tag for x in res.groups if x.dim == dim]
             names = Dict{Int,String}()
             for x in res.groups
                 x.dim == dim || continue
@@ -86,4 +85,49 @@ end
     finally
         gmsh.finalize()
     end
+end
+
+@testset "interfaces: scaled cells, all dimensions, void tags, names (review)" begin
+    # areas in physical units (scaled, shifted cell; 3D and 2D)
+    k = 1e-3
+    c3 = Cell((k, 2k, k); origin=(5k, -k, 0))
+    r3 = generate(RVE(c3, Phase(:p, Sphere(cellpoint(c3, (0.5, 0.5, 0.5)), 0.3k))); geometry_only=true)
+    @test interface_area(r3, :matrix, :p) ≈ 4π * (0.3k)^2 rtol = 1e-9
+    c2 = Cell((2k, k); origin=(1k, 3k))
+    r2 = generate(RVE(c2, Phase(:p, Disk(cellpoint(c2, (0.5, 0.5)), 0.2k))); geometry_only=true)
+    @test interface_area(r2, :matrix, :p) ≈ 2π * 0.2k rtol = 1e-9
+    # a sphere crossing a face: pair and union groups in dimensions 2, 1 and 0
+    generate(RVE(unitcell(), Phase(:p, Sphere((1.0, 0.5, 0.5), 0.2))); geometry_only=true) do res
+        for dim in 0:2
+            @test "interface_matrix_p" in group_names(res; dim=dim)
+            @test "interfaces" in group_names(res; dim=dim)
+        end
+    end
+    # void: tag and union
+    generate(RVE(unitcell(), [Phase(:s, Sphere((0.3, 0.5, 0.5), 0.2)), Phase(:t, Sphere((0.7, 0.5, 0.5), 0.15))]; matrix=nothing);
+             geometry_only=true) do res
+        @test Set(interface_names(res)) == Set(["interface_s_void", "interface_t_void"])
+        @test interface_tag(res, :s, :void) == 100 + 0 * 3 + 3 && interface_tag(res, :t, :void) == 100 + 1 * 3 + 3
+        g(name, dim) = Set(only(x for x in res.groups if x.name == name && x.dim == dim).entities)
+        for dim in 0:2
+            @test g("interfaces", dim) == union(g("interface_s_void", dim), g("interface_t_void", dim))
+        end
+    end
+    # same-phase surfaces are not interfaces
+    ov = generate(RVE(unitcell(), Phase(:p, [Sphere((0.4, 0.5, 0.5), 0.2), Sphere((0.6, 0.5, 0.5), 0.2)])); geometry_only=true)
+    @test interface_names(ov) == ["interface_matrix_p"]
+    # one tag per name in every dimension
+    generate(RVE(unitcell(), [Phase(:a, Sphere((0.3, 0.5, 0.5), 0.15)), Phase(:b, Sphere((0.7, 0.5, 0.5), 0.15))]);
+             geometry_only=true) do res
+        for dim in 0:3
+            tags = Dict{String,Int}()
+            for x in res.groups
+                x.dim == dim || continue
+                @test get!(tags, x.name, x.tag) == x.tag
+            end
+        end
+    end
+    # ambiguous interface names are rejected
+    @test_throws ArgumentError RVE(unitcell(), [Phase(:b_c, Sphere((0.2, 0.5, 0.5), 0.1)), Phase(:a_b, Sphere((0.5, 0.5, 0.5), 0.1)),
+                                              Phase(:c, Sphere((0.8, 0.5, 0.5), 0.1))]; matrix=:a)
 end
