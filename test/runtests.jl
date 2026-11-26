@@ -11,6 +11,7 @@ include("helpers.jl")
     @testset "Physical groups" begin include("test_groups.jl") end
     @testset "Periodic meshes" begin include("test_periodicity.jl") end
     @testset "Supercells" begin include("test_supercell.jl") end
+    @testset "2D cells" begin include("test_2d.jl") end
     @testset "Session" begin include("test_session.jl") end
     @testset "Robustness" begin include("test_robustness.jl") end
     @testset "Aqua" begin Aqua.test_all(RVEs) end

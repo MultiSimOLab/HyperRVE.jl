@@ -27,7 +27,6 @@ struct RVE{D}
 end
 
 function RVE(cell::Cell{D}, phases; matrix=:matrix, tiling=1, overlaps=:paint) where {D}
-    D == 3 || throw(ArgumentError("2D cells are not implemented yet"))
     ps = phases isa Phase ? [phases] : collect(phases)
     all(p -> p isa Phase, ps) || throw(ArgumentError("RVE: phases must be Phase objects"))
     for p in ps
@@ -53,7 +52,7 @@ function RVE(cell::Cell{D}, phases; matrix=:matrix, tiling=1, overlaps=:paint) w
                                 "parallel to it) to be a phase item. Pass crossing fibres as separate " *
                                 "items, or clip the geometry with Intersect(..., Box(...)) using a box larger than the cell"))
         end
-        _warn_long_cylinder(cell, p, g)
+        D == 3 && _warn_long_cylinder(cell, p, g)
     end
     return RVE{D}(cell, Vector{Phase{D}}(ps), m, t, overlaps)
 end

@@ -107,7 +107,7 @@ function assemble!(rve::RVE{D}, frame::Frame{D}) where {D}
                 if prev != 0 && prev != ip && rve.overlaps == :error
                     v = from_frame_measure(frame, occ.getMass(c[1], c[2]))
                     a, b = rve.phases[min(prev, ip)].name, rve.phases[max(prev, ip)].name
-                    error("phases $a and $b overlap (volume ≈ $(round(v; sigdigits=3))); " *
+                    error("phases $a and $b overlap ($(D == 3 ? "volume" : "area") ≈ $(round(v; sigdigits=3))); " *
                           "use overlaps = :paint or separate them")
                 end
                 if ip > prev

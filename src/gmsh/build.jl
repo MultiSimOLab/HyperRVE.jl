@@ -33,6 +33,19 @@ function build!(g::Fibre, ctx::BuildContext)
     return DimTag[(3, gmsh.model.occ.addCylinder((p0 .- H .* d)..., (2H .* d)..., g.radius))]
 end
 
+build!(g::Disk, ::BuildContext) = DimTag[(2, gmsh.model.occ.addDisk(g.center..., 0.0, g.radius, g.radius))]
+
+function build!(g::Ellipse, ::BuildContext)
+    a, b = g.radii
+    # OCC requires the first radius to be the larger one
+    a >= b && return DimTag[(2, gmsh.model.occ.addDisk(g.center..., 0.0, a, b))]
+    t = DimTag[(2, gmsh.model.occ.addDisk(g.center..., 0.0, b, a))]
+    gmsh.model.occ.rotate(t, g.center..., 0.0, 0.0, 0.0, 1.0, π / 2)
+    return t
+end
+
+build!(g::Rectangle, ::BuildContext) = DimTag[(2, gmsh.model.occ.addRectangle(g.corner..., 0.0, g.size...))]
+
 function build!(g::Fuse{D}, ctx::BuildContext) where {D}
     tags = build!(g.parts[1], ctx)
     length(g.parts) == 1 && return tags

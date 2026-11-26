@@ -90,6 +90,16 @@ end
           2 * sphere_vol(0.2)
 end
 
+@testset "transform centres (positions)" begin
+    sc = Scale(Sphere((0.6, 0.6, 0.6), 0.05), 2; center=(0.5, 0.5, 0.5))         # -> (0.7, 0.7, 0.7)
+    ro = Rotate(Sphere((0.7, 0.5, 0.5), 0.05); angle=π / 2, axis=(0, 0, 1), center=(0.5, 0.5, 0.5))  # -> (0.5, 0.7, 0.5)
+    generate(RVE(unitcell(), [Phase(:sc, sc), Phase(:ro, ro)]); geometry_only=true) do res
+        com(n) = gmsh.model.occ.getCenterOfMass(3, only(res[n].entities))
+        @test all(isapprox.(com(:sc), (0.7, 0.7, 0.7); atol=1e-4))   # B-spline: COM to ~1e-5
+        @test all(isapprox.(com(:ro), (0.5, 0.7, 0.5); atol=1e-9))
+    end
+end
+
 @testset "overlapping phases (G8)" begin
     c = (0.5, 0.5, 0.5)
     r1, r2 = 0.2, 0.3
