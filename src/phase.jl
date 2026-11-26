@@ -48,7 +48,7 @@ _refinement(x) = throw(ArgumentError("refine must be a size, true/false, a Named
                                      "InterfaceRefinement, got $(repr(x))"))
 
 """
-    Phase(name, geometry; h = nothing, refine = nothing)
+    Phase(name, geometry; h = nothing, refine = nothing, fuse = false)
 
 A named material phase. `geometry` is one [`Geometry`](@ref) or a collection of them (the
 items of the phase). Items are not fused: where items of the same phase overlap (or overlap
@@ -57,6 +57,9 @@ phase. Use [`Fuse`](@ref) to obtain one body. Each item crossing a periodic face
 is completed with its periodic images.
 
 - `h`: element size inside the phase (default: the global size of [`generate`](@ref)).
+- `fuse`: unite the items of the phase and their periodic images into one body before
+  meshing, so that no internal surfaces remain where items overlap (strut lattices, overlapping
+  particles). Refinement by `level` then uses the smallest item of the phase.
 - `refine`: refinement on the interfaces of the phase: a size (`refine = 0.02`), `true`
   (the rule of the 2024 API), a NamedTuple of [`InterfaceRefinement`](@ref) keywords or an
   `InterfaceRefinement`.
@@ -66,16 +69,18 @@ struct Phase{D}
     items::Vector{Geometry{D}}
     h::Union{Nothing,Float64}
     refine::Union{Nothing,InterfaceRefinement}
+    fuse::Bool
 end
-function Phase(name::Union{Symbol,AbstractString}, geometry; h=nothing, refine=nothing)
+function Phase(name::Union{Symbol,AbstractString}, geometry; h=nothing, refine=nothing, fuse::Bool=false)
     n = String(name)
     (isempty(n) || any(isspace, n)) && throw(ArgumentError("phase name must be non-empty and without spaces, got $(repr(n))"))
     items = geometry isa Geometry ? Geometry[geometry] : collect(geometry)
     v = _geometry_vector(items, "Phase $n")
     hp = h === nothing ? nothing : _positive(h, "Phase $n h")
-    return Phase{_dim(v[1])}(n, v, hp, _refinement(refine))
+    return Phase{_dim(v[1])}(n, v, hp, _refinement(refine), fuse)
 end
 
 Base.show(io::IO, p::Phase{D}) where {D} =
     print(io, "Phase{$D}(:", p.name, ", ", length(p.items), length(p.items) == 1 ? " item" : " items",
-          p.h === nothing ? "" : ", h = $(p.h)", p.refine === nothing ? "" : ", refined", ")")
+          p.h === nothing ? "" : ", h = $(p.h)", p.refine === nothing ? "" : ", refined",
+          p.fuse ? ", fused" : "", ")")

@@ -41,6 +41,115 @@ function _bbox(tags::Vector{DimTag})
     return lo, hi
 end
 
+"""
+Build `g` (frame coordinates) and its periodic/tiling copies that meet the domain. Returns
+`(shift, copies)` pairs; an item outside the domain gives a warning and nothing.
+"""
+function _item_copies!(g::Geometry{D}, ctx, lo, ℓ, n, periodic, tol, what) where {D}
+    occ = gmsh.model.occ
+    tags = build!(g, ctx)
+    blo, bhi = _bbox(tags)
+    ax = invariant_axis(g)
+    ranges = ntuple(d -> _shift_range(blo[d] - lo[d], bhi[d] - lo[d], ℓ[d], n[d], periodic[d], ax == d, tol), D)
+    shifts = vec(collect(Iterators.product(ranges...)))
+    out = Tuple{NTuple{D,Int},Vector{DimTag}}[]
+    if isempty(shifts)
+        @warn "$what lies outside the cell and is ignored"
+        occ.remove(tags, true)
+        return out
+    end
+    # note: copies of an item much larger than the cell overlap each other and make the
+    # global fragment slow (minutes for a radius of 1.5 cells)
+    has_zero = false
+    for k in shifts
+        if all(==(0), k)
+            push!(out, (k, tags))
+            has_zero = true
+        else
+            copies = DimTag[(Int32(d), Int32(t)) for (d, t) in occ.copy(tags)]
+            occ.translate(copies, _lift3(k .* ℓ)...)
+            push!(out, (k, copies))
+        end
+    end
+    has_zero || occ.remove(tags, true)
+    return out
+end
+
+# Identity of a placed primitive, to drop exact duplicates before a fuse (coincident bodies
+# are the pathological case of OCC booleans).
+_placement_key(::Geometry, shift) = nothing
+_placement_key(g::Sphere, s) = (:sphere, round.(g.center .+ s; digits=9), round(g.radius; digits=12))
+_placement_key(g::Disk, s) = (:disk, round.(g.center .+ s; digits=9), round(g.radius; digits=12))
+function _placement_key(g::Union{Cylinder,Capsule}, s)
+    p, q = g isa Cylinder ? (g.base, g.base .+ g.axis) : (g.p1, g.p2)
+    a, b = round.(p .+ s; digits=9), round.(q .+ s; digits=9)
+    return (nameof(typeof(g)), min(a, b), max(a, b), round(g.radius; digits=12))
+end
+
+function _fuse_or_error(objs::Vector{DimTag}, D, name)
+    length(objs) <= 1 && return objs
+    try
+        out, _ = gmsh.model.occ.fuse(objs[1:1], objs[2:end])
+        return _nonempty(_ents(out, D), "Fuse")
+    catch e
+        e isa ErrorException || rethrow()
+        error("phase $name: OCC could not fuse the items ($(e.msg)); for strut lattices try " *
+              "node_radius = 1.05 * radius, or fuse = false")
+    end
+end
+
+"""
+Tools of a phase with `fuse = true`: all items and their images united into one body per
+connected component. For a supercell periodic (or not tiled) in every direction, one cell is
+fused, clipped to the cell and tiled (the same set, much cheaper than fusing every copy).
+"""
+function _fused_tools!(rve::RVE{D}, ph::Phase{D}, frame, ctx, lo, ℓ, n, tol) where {D}
+    occ = gmsh.model.occ
+    per = rve.cell.periodic
+    unit = any(>(1), n) && all(d -> per[d] || n[d] == 1, 1:D)
+    m = unit ? ntuple(_ -> 1, D) : n
+    copies = DimTag[]
+    seen = Set{Any}()
+    for (ii, item) in enumerate(ph.items)
+        g = to_frame(frame, item)
+        for (k, c) in _item_copies!(g, ctx, lo, ℓ, m, per, tol, "item $ii of phase $(ph.name)")
+            key = _placement_key(g, _pad3(k .* ℓ))
+            if key !== nothing && key in seen
+                occ.remove(c, true)
+            else
+                append!(copies, c)
+                key === nothing || push!(seen, key)
+            end
+        end
+    end
+    isempty(copies) && return copies
+    body = _fuse_or_error(copies, D, ph.name)
+    unit || return body
+    cellbox = D == 3 ? occ.addBox(lo..., ℓ...) : occ.addRectangle(lo[1], lo[2], 0.0, ℓ...)
+    out, _ = occ.intersect(body, [(D, cellbox)])
+    body = _ents(out, D)
+    isempty(body) && return body
+    tiles = copy(body)
+    for k in Iterators.product(ntuple(d -> 0:n[d]-1, D)...)
+        all(==(0), k) && continue
+        c = DimTag[(Int32(d), Int32(t)) for (d, t) in occ.copy(body)]
+        occ.translate(c, _lift3(k .* ℓ)...)
+        append!(tiles, c)
+    end
+    # tiles touch only on cell planes; if OCC cannot fuse them, keep them separate (the mesh
+    # then keeps planar sections on the internal cell boundaries, same phase)
+    try
+        out, _ = occ.fuse(tiles[1:1], tiles[2:end])
+        return _ents(out, D)
+    catch e
+        e isa ErrorException || rethrow()
+        return tiles
+    end
+end
+
+_pad3(x::NTuple{2,Float64}) = (x[1], x[2])
+_pad3(x::NTuple{3,Float64}) = x
+
 function assemble!(rve::RVE{D}, frame::Frame{D}) where {D}
     occ = gmsh.model.occ
     tol = geomtol(frame)
@@ -52,37 +161,21 @@ function assemble!(rve::RVE{D}, frame::Frame{D}) where {D}
 
     tools = DimTag[]
     owner = Tuple{Int,Int}[]
-    for (ip, ph) in enumerate(rve.phases), (ii, item) in enumerate(ph.items)
-        g = to_frame(frame, item)
-        tags = build!(g, ctx)
-        blo, bhi = _bbox(tags)
-        ax = invariant_axis(g)
-        ranges = ntuple(d -> _shift_range(blo[d] - lo[d], bhi[d] - lo[d], ℓ[d], n[d],
-                                          rve.cell.periodic[d], ax == d, tol), D)
-        shifts = vec(collect(Iterators.product(ranges...)))
-        if isempty(shifts)
-            @warn "item $ii of phase $(ph.name) lies outside the cell and is ignored"
-            occ.remove(tags, true)
-            continue
-        end
-        # note: copies of an item much larger than the cell overlap each other and make the
-        # global fragment slow (minutes for a radius of 1.5 cells); clipping or fusing the
-        # copies first was tried and is either fragile or slower
-        has_zero = false
-        for k in shifts
-            if all(==(0), k)
-                copies = tags
-                has_zero = true
-            else
-                copies = DimTag[(Int32(d), Int32(t)) for (d, t) in occ.copy(tags)]
-                occ.translate(copies, _lift3(k .* ℓ)...)
-            end
-            for c in copies
-                push!(tools, c)
-                push!(owner, (ip, ii))
+    for (ip, ph) in enumerate(rve.phases)
+        if ph.fuse
+            body = _fused_tools!(rve, ph, frame, ctx, lo, ℓ, n, tol)
+            istar = argmin([characteristic_length(it) for it in ph.items])
+            append!(tools, body)
+            append!(owner, fill((ip, istar), length(body)))
+        else
+            for (ii, item) in enumerate(ph.items)
+                for (_, copies) in _item_copies!(to_frame(frame, item), ctx, lo, ℓ, n, rve.cell.periodic, tol,
+                                                 "item $ii of phase $(ph.name)")
+                    append!(tools, copies)
+                    append!(owner, fill((ip, ii), length(copies)))
+                end
             end
         end
-        has_zero || occ.remove(tags, true)
     end
 
     box = D == 3 ? occ.addBox(lo..., ext...) : occ.addRectangle(lo[1], lo[2], 0.0, ext...)

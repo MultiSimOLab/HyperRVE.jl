@@ -33,6 +33,27 @@ function build!(g::Fibre, ctx::BuildContext)
     return DimTag[(3, gmsh.model.occ.addCylinder((p0 .- H .* d)..., (2H .* d)..., g.radius))]
 end
 
+# built along z from the origin (seams aligned, all surfaces analytic), then moved
+function build!(g::Capsule, ::BuildContext)
+    occ = gmsh.model.occ
+    a = g.p2 .- g.p1
+    L = _norm(a)
+    u = a ./ L
+    c = DimTag[(3, occ.addCylinder(0.0, 0.0, 0.0, 0.0, 0.0, L, g.radius))]
+    s = DimTag[(3, occ.addSphere(0.0, 0.0, 0.0, g.radius)), (3, occ.addSphere(0.0, 0.0, L, g.radius))]
+    out, _ = occ.fuse(c, s)
+    t = _nonempty(_ents(out, 3), "Capsule")
+    n = (-u[2], u[1], 0.0)                     # e_z × u
+    sn = hypot(n[1], n[2])
+    if sn > 1e-14
+        occ.rotate(t, 0.0, 0.0, 0.0, (n ./ sn)..., atan(sn, u[3]))
+    elseif u[3] < 0
+        occ.rotate(t, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, π)
+    end
+    occ.translate(t, g.p1...)
+    return t
+end
+
 build!(g::Disk, ::BuildContext) = DimTag[(2, gmsh.model.occ.addDisk(g.center..., 0.0, g.radius, g.radius))]
 
 function build!(g::Ellipse, ::BuildContext)

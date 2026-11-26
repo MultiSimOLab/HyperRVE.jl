@@ -15,6 +15,7 @@ include("helpers.jl")
     @testset "Mesh control" begin include("test_meshcontrol.jl") end
     @testset "Mesh options" begin include("test_meshoptions.jl") end
     @testset "Interface groups" begin include("test_interfaces.jl") end
+    @testset "Capsules and fused phases" begin include("test_fuse.jl") end
     @testset "Session" begin include("test_session.jl") end
     @testset "Robustness" begin include("test_robustness.jl") end
     @testset "Aqua" begin Aqua.test_all(RVEs) end
