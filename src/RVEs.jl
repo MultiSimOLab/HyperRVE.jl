@@ -14,7 +14,7 @@ using Gmsh: Gmsh, gmsh
 using Printf: @sprintf
 
 export Cell, cellpoint
-export Geometry, Sphere, Ellipsoid, Box, Cylinder, Fibre, Disk, Ellipse, Rectangle
+export Geometry, Sphere, Ellipsoid, Box, Cylinder, Capsule, Fibre, Disk, Ellipse, Rectangle
 export Fuse, Cut, Intersect, Translate, Rotate, Scale
 export Phase, RVE, supercell
 export MeshOptions, InterfaceRefinement

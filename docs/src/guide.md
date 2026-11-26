@@ -37,6 +37,7 @@ and mapped back, so a 1 µm cell in metres gives the same mesh as a unit cell.
 | `Ellipsoid(center, radii)` | `Ellipse(center, radii)` |
 | `Box(corner, size)` / `Box(center = c, size = s)` | `Rectangle(corner, size)` |
 | `Cylinder(base, axis, radius)` (finite) | |
+| `Capsule(p1, p2, radius)` (cylinder with spherical caps) | |
 | `Fibre(point, direction, radius)` (infinite) | |
 
 Booleans: `Fuse(a, b, ...)` (`a ∪ b`), `Cut(object, tools...)` (`setdiff`), `Intersect(a, b, ...)`
@@ -48,6 +49,10 @@ periodic images; items larger than the cell are handled too. Fibres must be para
 cell axis to be phase items (oblique fibres can be used inside booleans).
 
 ## Phases and overlaps
+
+`Phase(name, items; fuse = true)` unites the items of a phase and their periodic images into
+one body before meshing (no internal surfaces where items overlap): use it for strut
+lattices and clusters of overlapping particles.
 
 Phases are painted in order: where two phases overlap, the one listed later wins
 (`overlaps = :paint`); `overlaps = :error` makes any overlap an error. A coated particle is

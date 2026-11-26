@@ -5,7 +5,7 @@ Abstract type of all geometric descriptions in `D` dimensions. Geometries are im
 lazy trees: nothing is sent to Gmsh until [`generate`](@ref).
 
 Primitives: [`Sphere`](@ref), [`Ellipsoid`](@ref), [`Box`](@ref), [`Cylinder`](@ref),
-[`Fibre`](@ref) in 3D; [`Disk`](@ref), [`Ellipse`](@ref), [`Rectangle`](@ref) in 2D. Booleans: [`Fuse`](@ref), [`Cut`](@ref), [`Intersect`](@ref) (also
+[`Capsule`](@ref), [`Fibre`](@ref) in 3D; [`Disk`](@ref), [`Ellipse`](@ref), [`Rectangle`](@ref) in 2D. Booleans: [`Fuse`](@ref), [`Cut`](@ref), [`Intersect`](@ref) (also
 `a ∪ b`, `a ∩ b`, `setdiff(a, b)`). Transforms: [`Translate`](@ref), [`Rotate`](@ref),
 [`Scale`](@ref).
 """
@@ -110,6 +110,38 @@ struct Fibre <: Geometry{3}
             _positive(radius, "Fibre radius"))
 end
 Fibre(; point, direction, radius) = Fibre(point, direction, radius)
+
+"""
+    Capsule(p1, p2, radius)
+    Capsule(; p1, p2, radius)
+    Capsule(; center, direction, length, radius)
+
+Cylinder of axis `p1 → p2` closed by two hemispherical caps of the same radius (`length` is
+the distance between the cap centres). A short fibre or a hand-made strut. For strut lattices
+prefer cylinders plus one sphere per node: several
+capsules ending at the same point give coincident spherical caps, a degenerate case for
+OpenCASCADE booleans.
+"""
+struct Capsule <: Geometry{3}
+    p1::Vec{3}
+    p2::Vec{3}
+    radius::Float64
+    function Capsule(p1, p2, radius)
+        a, b = _vec(Val(3), p1, "Capsule p1"), _vec(Val(3), p2, "Capsule p2")
+        a == b && throw(ArgumentError("Capsule: p1 and p2 coincide; use Sphere"))
+        return new(a, b, _positive(radius, "Capsule radius"))
+    end
+end
+function Capsule(; p1=nothing, p2=nothing, center=nothing, direction=nothing, length=nothing, radius)
+    if p1 !== nothing && p2 !== nothing && center === nothing && direction === nothing && length === nothing
+        return Capsule(p1, p2, radius)
+    elseif p1 === nothing && p2 === nothing && center !== nothing && direction !== nothing && length !== nothing
+        d = _normalize(_vec(Val(3), direction, "Capsule direction"), "Capsule direction") .* (_positive(length, "Capsule length") / 2)
+        c = _vec(Val(3), center, "Capsule center")
+        return Capsule(c .- d, c .+ d, radius)
+    end
+    throw(ArgumentError("Capsule: give either (p1, p2, radius) or (center, direction, length, radius)"))
+end
 
 # ----------------------------------------------------------------------------- 2D primitives
 
@@ -299,6 +331,7 @@ refpoint(g::Sphere) = g.center
 refpoint(g::Ellipsoid) = g.center
 refpoint(g::Box) = g.corner .+ g.size ./ 2
 refpoint(g::Union{Disk,Ellipse}) = g.center
+refpoint(g::Capsule) = (g.p1 .+ g.p2) ./ 2
 refpoint(g::Rectangle) = g.corner .+ g.size ./ 2
 refpoint(g::Cylinder) = g.base .+ g.axis ./ 2
 refpoint(g::Fibre) = g.point
@@ -319,7 +352,7 @@ characteristic_length(g::Box) = minimum(g.size)
 characteristic_length(g::Disk) = g.radius
 characteristic_length(g::Ellipse) = minimum(g.radii)
 characteristic_length(g::Rectangle) = minimum(g.size)
-characteristic_length(g::Union{Cylinder,Fibre}) = g.radius
+characteristic_length(g::Union{Cylinder,Fibre,Capsule}) = g.radius
 characteristic_length(g::Union{Fuse,Intersect}) = minimum(characteristic_length, g.parts)
 characteristic_length(g::Cut) = min(characteristic_length(g.object), minimum(characteristic_length, g.tools))
 characteristic_length(g::Union{Translate,Rotate}) = characteristic_length(g.child)

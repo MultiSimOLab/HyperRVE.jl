@@ -33,6 +33,18 @@ function build!(g::Fibre, ctx::BuildContext)
     return DimTag[(3, gmsh.model.occ.addCylinder((p0 .- H .* d)..., (2H .* d)..., g.radius))]
 end
 
+# built along z from the origin (seams aligned, all surfaces analytic), then moved
+function build!(g::Capsule, ::BuildContext)
+    # built in place (cylinder along p2 - p1 plus a sphere at each end): a capsule built along z
+    # and then rotated gives OCC unions with invalid solids when capsules form closed loops
+    occ = gmsh.model.occ
+    a = g.p2 .- g.p1
+    c = DimTag[(3, occ.addCylinder(g.p1..., a..., g.radius))]
+    s = DimTag[(3, occ.addSphere(g.p1..., g.radius)), (3, occ.addSphere(g.p2..., g.radius))]
+    out, _ = occ.fuse(c, s)
+    return _nonempty(_ents(out, 3), "Capsule")
+end
+
 build!(g::Disk, ::BuildContext) = DimTag[(2, gmsh.model.occ.addDisk(g.center..., 0.0, g.radius, g.radius))]
 
 function build!(g::Ellipse, ::BuildContext)
