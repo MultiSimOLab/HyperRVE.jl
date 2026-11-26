@@ -54,3 +54,28 @@ end
     @test_throws ArgumentError struts(Cell((1.0, 1.0)), [(0.0, 0.0)], [(1, 1, (1, 0))]; radius=0.05, thickness=0.1)
     @test length(struts(Cell((1.0, 1.0)), [(0.0, 0.0)], [(1, 1, (1, 0))]; thickness=0.1)) == 2
 end
+
+@testset "more lattices: review fixes" begin
+    # re-entrant: the vertical struts must exceed 2 sin(angle)
+    @test_throws ArgumentError lattice_topology(:reentrant; angle=π / 6, ratio=0.8)
+    @test_throws ArgumentError lattice_topology(:reentrant; angle=π / 3, ratio=1.5)
+    @test length(lattice_topology(:reentrant; angle=-π / 4, ratio=0.5).nodes) == 4
+    t = lattice_topology(:reentrant)
+    @test all(p -> all(0 .<= p .< 1), t.nodes)                                   # fractional, wrapped
+    # exact area fractions of the 2D presets
+    for k in (:square, :triangular, :honeycomb, :kagome)
+        c = lattice_cell(k; a=0.5)
+        g = geo(RVE(c, Phase(:l, lattice(c, k; thickness=0.05); fuse=true); matrix=nothing))
+        @test volume_fraction(g, :l) ≈ relative_density(k, 0.1) rtol = 1e-9
+    end
+    @test length(lattice(lattice_cell(:square), :square; radius=0.05)) == 3
+    # errors
+    @test_throws ArgumentError lattice(lattice_cell(:square), :square)
+    @test_throws ArgumentError lattice(lattice_cell(:square), :square; thickness="a")
+    @test_throws ArgumentError lattice(lattice_cell(:honeycomb), :honeycomb; thickness=0.05, angle=0.3)
+    @test_throws ArgumentError lattice(unitcell(), :bccz; thickness=0.1)
+    @test_throws ArgumentError lattice(unitcell(), :honeycomb; radius=0.05)
+    @test_throws ArgumentError lattice_topology(:reentrant; angle="x")
+    # BCCZ/FCCZ formula up to x = 0.18
+    @test relative_density(:bccz, 0.18) > 0 && relative_density(:fccz, 0.18) > 0
+end

@@ -30,7 +30,7 @@ end
 
 @testset "laminates" begin
     c = unitcell()
-    ph = laminate(c; axis=3, fractions=(0.3, 0.7), offset=0.85)
+    ph = laminate(c; axis=3, fractions=(0.3, 0.7))                                         # first layer centred on the face
     @test [p.name for p in ph] == ["layer_1", "layer_2"]
     res = generate(RVE(c, ph; matrix=nothing); h=0.1)
     @test [p.fraction for p in res.phases] ≈ [0.3, 0.7] rtol = 1e-8
@@ -43,4 +43,27 @@ end
     @test_throws ArgumentError laminate(c; fractions=(1.0,))
     @test_throws ArgumentError laminate(c; axis=4, fractions=(0.5, 0.5))
     @test_throws ArgumentError laminate(c; fractions=(0.5, 0.5), names=(:a,))
+end
+
+@testset "arrays and laminates: review fixes" begin
+    # a laminate along a free axis fills the cell (layers crossing the face are split)
+    cf = Cell((1.0, 1.0, 1.0); periodic=(true, true, false))
+    g = geo(RVE(cf, laminate(cf; axis=3, fractions=(0.3, 0.7), offset=0.5); matrix=nothing))
+    @test [p.fraction for p in g.phases] ≈ [0.3, 0.7] rtol = 1e-10
+    @test !("interface_layer_1_void" in interface_names(g))
+    # repeated names form one phase
+    ph = laminate(unitcell(); fractions=(0.25, 0.25, 0.25, 0.25), names=(:a, :b, :a, :b))
+    @test [p.name for p in ph] == ["a", "b"] && length(ph[1].items) >= 2
+    g = geo(RVE(unitcell(), ph; matrix=nothing))
+    @test volume(g, :a) ≈ 0.5 rtol = 1e-10
+    # default offset: every interface plane is inside the cell
+    res = generate(RVE(unitcell(), laminate(unitcell(); fractions=fill(0.1, 10)); matrix=nothing); h=0.2)
+    @test length(interface_names(res)) == 10
+    @test_throws ArgumentError laminate(unitcell(); fractions=(0.5, 0.5), names="ab")
+    @test_throws ArgumentError laminate(unitcell(); fractions=("a", "b"))
+    @test_throws ArgumentError laminate(unitcell())
+    # particle arrays need a periodic cell when particles sit on faces
+    @test_throws ArgumentError particle_array(Cell((1.0, 1.0, 1.0); periodic=false), :bcc; fraction=0.2)
+    @test length(particle_array(Cell((1.0, 1.0, 1.0); periodic=false), :sc; radius=0.45)) == 1
+    @test_throws ArgumentError particle_array(Cell((1.0, 1.0, 1.0); periodic=false), :sc; radius=0.6)
 end

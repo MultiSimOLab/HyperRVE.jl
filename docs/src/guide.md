@@ -98,7 +98,11 @@ bcc, kelvin and diamond a larger node sphere changes the joint and the density.
   `struts` also works in 2D cells (rectangles and disks; `thickness = 2 radius`).
 - `particle_array(cell, kind; fraction | radius)`: `:sc`, `:bcc`, `:fcc` spheres or `:square`,
   `:hex` disks (the hexagonal cell is `Cell((a, √3 a))`).
-- `laminate(cell; axis, fractions, names, offset)`: one phase per layer, for `matrix = nothing`.
+- `laminate(cell; axis, fractions, names, offset)`: one phase per layer (repeated names form one
+  phase), for `matrix = nothing`; by default the first layer is centred on the cell face so that
+  no interface lies on a face.
+- `relative_density(kind, t / a)` gives the exact area fraction of the 2D square, triangular,
+  honeycomb and kagome lattices.
 
 ## Random packings
 
