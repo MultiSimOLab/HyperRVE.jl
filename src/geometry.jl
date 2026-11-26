@@ -336,12 +336,20 @@ struct Polyhedron <: Geometry{3}
     function Polyhedron(vertices, faces)
         v = Vec{3}[_vec(Val(3), p, "Polyhedron vertex") for p in vertices]
         f = Vector{Int}[]
+        faces isa AbstractVector || throw(ArgumentError("Polyhedron: faces must be a vector of index loops"))
         for face in faces
-            all(x -> x isa Integer, face) || throw(ArgumentError("Polyhedron: a face is a list of vertex indices, got $face"))
+            (face isa Union{AbstractVector,Tuple} && all(x -> x isa Integer && !(x isa Bool), face)) ||
+                throw(ArgumentError("Polyhedron: a face is a list of vertex indices, got $face"))
             push!(f, Int.(collect(face)))
         end
         length(v) >= 4 && length(f) >= 4 || throw(ArgumentError("Polyhedron: needs at least 4 vertices and 4 faces"))
         L = maximum(p -> _norm(p .- v[1]), v)
+        used = falses(length(v))
+        for face in f, i in face
+            1 <= i <= length(v) && (used[i] = true)
+        end
+        all(used) || throw(ArgumentError("Polyhedron: vertices $(findall(.!used)) are not used by any face"))
+        _check_distinct(v, L, "Polyhedron")
         edges = Dict{Tuple{Int,Int},Int}()
         for face in f
             length(unique(face)) == length(face) >= 3 ||
@@ -366,11 +374,21 @@ struct Polyhedron <: Geometry{3}
 end
 Polyhedron(; vertices, faces) = Polyhedron(vertices, faces)
 
+# vertices closer than OpenCASCADE's tolerance (1e-7 of the size) cannot become separate points
+function _check_distinct(v, L, what)
+    for i in eachindex(v), j in i+1:length(v)
+        _norm(v[i] .- v[j]) > 1e-7 * L ||
+            throw(ArgumentError("$what: vertices $i and $j coincide (closer than 1e-7 of the size); merge them"))
+    end
+    return nothing
+end
+
 # Newell normal (twice the area vector) of a planar loop
 function _face_normal(v, face)
     n = (0.0, 0.0, 0.0)
+    o = v[face[1]]
     for (a, b) in zip(face, circshift(face, -1))
-        p, q = v[a], v[b]
+        p, q = v[a] .- o, v[b] .- o
         n = n .+ ((p[2] - q[2]) * (p[3] + q[3]), (p[3] - q[3]) * (p[1] + q[1]), (p[1] - q[1]) * (p[2] + q[2]))
     end
     return n
@@ -401,6 +419,8 @@ function _oriented_faces(v, f)
 end
 
 function _polyhedron_volume(v, f)
+    o = v[1]
+    v = [p .- o for p in v]                  # relative coordinates: no cancellation far from the origin
     of = _oriented_faces(v, f)
     vol = 0.0
     for face in of, k in 2:length(face)-1
@@ -411,6 +431,8 @@ function _polyhedron_volume(v, f)
 end
 
 function _polyhedron_centroid(v, f)
+    o = v[1]
+    v = [p .- o for p in v]
     of = _oriented_faces(v, f)
     vol = 0.0; c = (0.0, 0.0, 0.0)
     for face in of, k in 2:length(face)-1
@@ -418,7 +440,7 @@ function _polyhedron_centroid(v, f)
         t = (a[1] * (b[2] * d[3] - b[3] * d[2]) - a[2] * (b[1] * d[3] - b[3] * d[1]) + a[3] * (b[1] * d[2] - b[2] * d[1])) / 6
         vol += t; c = c .+ t .* (a .+ b .+ d) ./ 4
     end
-    return c ./ vol
+    return o .+ c ./ vol
 end
 
 """
@@ -433,23 +455,25 @@ struct Polygon <: Geometry{2}
         v = Vec{2}[_vec(Val(2), p, "Polygon vertex") for p in vertices]
         length(v) >= 3 || throw(ArgumentError("Polygon: needs at least 3 vertices"))
         L = maximum(p -> _norm(p .- v[1]), v)
+        _check_distinct(v, L, "Polygon")
         abs(_polygon_area(v)) > 1e-12 * L^2 || throw(ArgumentError("Polygon: zero area"))
-        all(i -> _norm(v[i] .- v[mod1(i + 1, length(v))]) > 1e-12 * L, eachindex(v)) ||
-            throw(ArgumentError("Polygon: repeated consecutive vertices"))
         return new(v)
     end
 end
 Polygon(; vertices) = Polygon(vertices)
 
-_polygon_area(v) = sum(v[i][1] * v[mod1(i + 1, length(v))][2] - v[mod1(i + 1, length(v))][1] * v[i][2] for i in eachindex(v)) / 2
+_polygon_area(v) = _polygon_area0([p .- v[1] for p in v])
+_polygon_area0(v) = sum(v[i][1] * v[mod1(i + 1, length(v))][2] - v[mod1(i + 1, length(v))][1] * v[i][2] for i in eachindex(v)) / 2
 function _polygon_centroid(v)
-    A = _polygon_area(v); cx = 0.0; cy = 0.0
+    o = v[1]
+    v = [p .- o for p in v]
+    A = _polygon_area0(v); cx = 0.0; cy = 0.0
     for i in eachindex(v)
         p, q = v[i], v[mod1(i + 1, length(v))]
         w = p[1] * q[2] - q[1] * p[2]
         cx += (p[1] + q[1]) * w; cy += (p[2] + q[2]) * w
     end
-    return (cx / (6A), cy / (6A))
+    return (o[1] + cx / (6A), o[2] + cy / (6A))
 end
 
 

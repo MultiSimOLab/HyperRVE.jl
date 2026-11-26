@@ -35,7 +35,22 @@ end
     @test_throws ArgumentError Polygon([(0, 0), (1, 0), (2, 0)])                                    # zero area
     @test_throws ArgumentError Polygon([(0, 0), (1, 0), (1, 0), (0, 1)])                             # repeated vertex
     g = Polygon([(0.0, 0.0), (2.0, 0.0), (2.0, 1.0), (0.0, 1.0)])
-    @test RVEs.refpoint(g) == (1.0, 0.5) && RVEs.characteristic_length(g) ≈ 2 * 2 / 6
+    @test all(RVEs.refpoint(g) .≈ (1.0, 0.5)) && RVEs.characteristic_length(g) ≈ 2 * 2 / 6
+    # traits are translation invariant (no cancellation far from the origin)
+    for (s, o) in ((1e-3, (1e3, 1e3, 1e3)), (1e-6, (1.0, 2.0, 3.0)), (1.0, (1e5, 1e5, 1e5)))
+        c = cube(o .+ s .* (0.5, 0.5, 0.5), 0.3s)
+        @test all(abs.(RVEs.refpoint(c) .- (o .+ s .* (0.5, 0.5, 0.5))) .<= 1e-9s)
+        @test RVEs.characteristic_length(c) ≈ 0.15s rtol = 1e-6
+        sq = Polygon([o[1:2] .+ s .* x for x in ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))])
+        @test all(abs.(RVEs.refpoint(sq) .- (o[1:2] .+ s .* (0.5, 0.5))) .<= 1e-9s)
+    end
+    # unused or coincident vertices, malformed faces
+    @test_throws ArgumentError Polyhedron([p.vertices; (0.9, 0.9, 0.9)], p.faces)
+    @test_throws ArgumentError Polyhedron([p.vertices[1:7]; p.vertices[7]], p.faces)
+    @test_throws ArgumentError Polyhedron(p.vertices, [1, 2, 3, 4])
+    @test_throws ArgumentError Polyhedron(p.vertices, [[true, 2, 3]; p.faces[2:end]])
+    @test_throws ArgumentError Polygon([(0, 0), (1, 0), (1, 1e-10), (0, 1)])
+    @test_throws ArgumentError Polygon([(0, 0), (1, 0), (0.5, 0.5), (1, 1), (0, 1), (0.5, 0.5)])
 end
 
 @testset "volumes and periodic images" begin
@@ -52,6 +67,14 @@ end
     res = geo(RVE(cell, [Phase(:L, L), Phase(:c, cube((0.6, 0.6, 0.5), 0.2))]))
     @test volume(res, :L) ≈ 0.08 rtol = 1e-10
     @test volume(res, :c) ≈ 0.008 rtol = 1e-10
+    # an edge too short for OpenCASCADE in frame units: a clear ArgumentError
+    tiny = prism([(0.3, 0.3), (0.3 + 5e-9, 0.3), (0.31, 0.31)], 0.3, 0.31)    # passes the relative check
+    @test_throws ArgumentError geo(RVE(cell, Phase(:t, tiny)))
+    # Rotate and Scale about the default centre in a tiny cell far from the origin
+    ck = Cell((1e-3, 1e-3, 1e-3); origin=(10.0, 10.0, 10.0))
+    c = cube((10.0005, 10.0005, 10.0005), 3e-4)
+    r = geo(RVE(ck, Phase(:c, Intersect(Rotate(c; axis=(0, 0, 1), angle=0.5), Scale(c, 1.0)))))
+    @test volume_fraction(r, :c) > 0.02
     # tiny cell (normalised frame)
     ck = Cell((1e-3, 1e-3, 1e-3); origin=(0.3, 0, 0))
     @test volume_fraction(geo(RVE(ck, Phase(:c, cube((0.3005, 0.0005, 0.0005), 4e-4)))), :c) ≈ 0.064 rtol = 1e-9
