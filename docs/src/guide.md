@@ -129,6 +129,24 @@ about 1e-2 of the spacing give grain faces nearly coplanar with the cell faces, 
 fail to make periodic: use the exact lattice or a larger perturbation. Many grains give many
 interface groups (about 7 per grain).
 
+## Void phases and foams
+
+`Phase(name, items; void = true)` makes empty space: what it covers is removed from the mesh
+(also over earlier phases), and its surfaces are the groups `interface_<a>_void`.
+
+From a tessellation `t = voronoi(cell; n, rng)`:
+- closed cells: `pores(t; wall)` are the grains shrunk by `wall / 2`, and
+  `wall_thickness(t, density)` the wall for a relative density (exact):
+  `RVE(cell, Phase(:pores, pores(t; wall = w); void = true); matrix = :walls)`;
+- open cells: `foam_struts(t; radius)` are the edges as struts (short edges merged), for a
+  fused phase: `RVE(cell, Phase(:foam, foam_struts(t; radius = 0.02); fuse = true); matrix = nothing)`
+  (fully periodic tessellations; practical for about 5–20 cells). The geometry is exact, but
+  meshing open foams from random tessellations is fragile (very small pieces of struts cut by
+  the cell faces): regular seeds (BCC → Kelvin foam) mesh well.
+
+`generate(...; interfaces = :union)` creates only the union group `interfaces`, useful with
+many grains.
+
 ## Mesh control
 
 - `generate(rve; h)`: bulk size; `Phase(...; h)`: size inside a phase.

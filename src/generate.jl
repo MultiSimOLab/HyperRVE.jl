@@ -19,7 +19,8 @@ periodicity and mesh it. Gmsh is initialised and finalised automatically; the re
   can be used; close it with [`close_gmsh`](@ref).
 - `verbosity`: 0 silent, 1 summary, 2 Gmsh terminal output.
 - `name`: name of the Gmsh model (made unique if a model with that name is already open).
-- `interfaces`: create the interface physical groups (see below).
+- `interfaces`: create the interface physical groups (see below); `:union` creates only their
+  union `interfaces` (for many phases, e.g. polycrystals: the result still lists every interface).
 
 The do-block form runs `f(res)` while the Gmsh model is alive, then closes Gmsh (unless
 `keep_open = true`); it returns `res`, not the value of `f`. In the live model the mesh is in
@@ -63,7 +64,7 @@ generate(f::Function, rve::RVE; kwargs...) = _generate(f, rve; kwargs...)
 function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), output=nothing,
                    geometry_only::Bool=false, check_periodicity::Bool=true, view::Bool=false,
                    keep_open::Bool=false, verbosity::Integer=0, name::AbstractString="RVE",
-                   interfaces::Bool=true) where {D}
+                   interfaces::Union{Bool,Symbol}=true) where {D}
     if h !== nothing
         mesh.h === nothing || throw(ArgumentError("give the global size either as h or as mesh.h, not both"))
         mesh = _with(mesh; h=_positive(h, "h"))

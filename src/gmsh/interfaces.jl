@@ -29,11 +29,13 @@ dimensions D-1 … 0 (closed sets, like the face groups), plus their union `inte
 Tags depend only on the phase list: union 99, pair (i, j) -> 100 + (i - 1)(N + 1) + j.
 """
 function interface_groups!(groups, rve::RVE{D}, frame::Frame{D}, part::Partition,
-                           ifs::Vector{InterfaceSurface}; create::Bool=true) where {D}
+                           ifs::Vector{InterfaceSurface}; create::Union{Bool,Symbol}=true) where {D}
+    create in (true, false, :union) || throw(ArgumentError("interfaces must be true, false or :union"))
     names = vcat(part.names, "void")
     N = length(part.names)
-    offset = rve.matrix === nothing ? 0 : 1
-    slot(p) = p == -1 ? N + 1 : p + offset
+    # slot of a phase index in the partition list (void phases are not in it)
+    pos = Dict(n => k for (k, n) in enumerate(part.names))
+    slot(p) = p == -1 ? N + 1 : p == 0 ? 1 : pos[rve.phases[p].name]
     pairs = Dict{Tuple{Int,Int},Vector{Int}}()
     for s in ifs
         i, j = slot(s.sides[1][1]), slot(s.sides[2][1])
@@ -52,14 +54,14 @@ function interface_groups!(groups, rve::RVE{D}, frame::Frame{D}, part::Partition
         name = "interface_" * names[i] * "_" * names[j]
         tag = 100 + (i - 1) * (N + 1) + j
         area = sum(from_frame_measure(frame, gmsh.model.occ.getMass(D - 1, s), D - 1) for s in surfs)
-        if create
+        if create === true
             for dim in D-1:-1:0
                 _add_group!(groups, dim, closure(surfs, dim), tag, name)
             end
         end
-        push!(infos, InterfaceInfo(name, (names[i], names[j]), create ? tag : 0, surfs, area))
+        push!(infos, InterfaceInfo(name, (names[i], names[j]), create === true ? tag : 0, surfs, area))
     end
-    if create && !isempty(allsurfs)
+    if create !== false && !isempty(allsurfs)
         u = sort!(unique(allsurfs))
         for dim in D-1:-1:0
             _add_group!(groups, dim, closure(u, dim), 99, "interfaces")
