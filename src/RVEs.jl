@@ -34,6 +34,7 @@ include("gmsh/build.jl")
 include("gmsh/assemble.jl")
 include("gmsh/groups.jl")
 include("gmsh/periodicity.jl")
+include("gmsh/interfaces.jl")
 include("gmsh/meshing.jl")
 include("generate.jl")
 

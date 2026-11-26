@@ -29,6 +29,13 @@ using RVEs: refpoint, characteristic_length, isunbounded, invariant_axis, _shift
     @test p isa Phase{3} && length(p.items) == 3
     @test Phase(:q, s).name == "q"
     @test MeshOptions(h=0.1).h == 0.1
+    @test RVEs._with(MeshOptions(growth=1.5); h=0.2).growth == 1.5
+    sp = Sphere((0, 0, 0), 1)
+    @test Phase(:p, sp; refine=0.02).refine.h == InterfaceRefinement(h=0.02).h == InterfaceRefinement(0.02).h
+    @test Phase(:p, sp; refine=(h=0.02, growth=1.2)).refine.growth == 1.2
+    @test Phase(:p, sp; refine=true).refine.level == 1.0
+    @test Phase(:p, sp; refine=false).refine === nothing
+    @test Phase(:p, sp; h=0.05).h == 0.05
 end
 
 @testset "validation" begin
@@ -49,7 +56,16 @@ end
     @test_throws ArgumentError Phase("a b", Sphere((0, 0, 0), 1))
     @test_throws ArgumentError Phase("", Sphere((0, 0, 0), 1))
     @test_throws ArgumentError InterfaceRefinement(level=0)
-    @test_throws ArgumentError InterfaceRefinement(distmin=0.5, distmax=0.1)
+    @test_throws ArgumentError InterfaceRefinement(width=-0.1)
+    @test_throws ArgumentError InterfaceRefinement(growth=1.0)
+    @test_throws ArgumentError MeshOptions(growth=1)
+    @test_throws ArgumentError MeshOptions(hmin=0.2, hmax=0.1)
+    @test_throws ArgumentError MeshOptions(curvature=-1)
+    @test_throws ArgumentError Phase(:p, Sphere((0, 0, 0), 1); h=-1)
+    @test_throws ArgumentError Phase(:p, Sphere((0, 0, 0), 1); refine="x")
+    @test_throws ArgumentError Phase(:p, Sphere((0, 0, 0), 1); refine=-1)
+    @test_throws ArgumentError RVE(unitcell(), Phase(:void, Sphere((0.5, 0.5, 0.5), 0.1)))
+    @test_throws ArgumentError RVE(unitcell(), Phase(:interface_a, Sphere((0.5, 0.5, 0.5), 0.1)))
     s = Sphere((0.5, 0.5, 0.5), 0.1)
     c = unitcell()
     @test_throws ArgumentError RVE(c, [Phase(:a, s), Phase(:a, s)])

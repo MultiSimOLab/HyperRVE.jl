@@ -6,7 +6,7 @@ Version 2 replaces the whole public API. The table maps every old call to its re
 |----|----|
 | `startGmsh()`, `stopGmsh()`, `ShowInfo(n)` | handled by `generate`; `verbosity = n` |
 | `RVE(size, flags, origin, h)` | `Cell(size; origin, periodic)`, `RVE(cell, phases)`, `generate(rve; h)` |
-| `Sphere(c, r, ref)` | `Sphere(c, r)` inside `Phase(name, ...; refine = InterfaceRefinement(level = ref))` |
+| `Sphere(c, r, ref)` | `Sphere(c, r)` inside `Phase(name, ...; refine = InterfaceRefinement(level = ref))`, or simply `refine = <interface size>` |
 | `Box(size, origin, ref)` | `Box(corner = origin, size = size)` (argument order changed) |
 | `Cylinder(o, axis, r, ref)` crossing the cell | `Fibre(point, direction, r)` |
 | `Ellipsoid(c, radii, [θ1, θ2], ref)` | `Rotate(Rotate(Ellipsoid(c, radii); axis = (0, 1, 0), angle = θ1); axis = (0, 0, 1), angle = θ2)` |
@@ -22,7 +22,9 @@ Behaviour changes:
 - Overlapping phases: the phase listed later wins (`overlaps = :paint`); `overlaps = :error`
   turns any overlap into an error.
 - Mesh refinement around inclusions is opt-in per phase (`refine`); without it the mesh has
-  the uniform global size `h`.
+  the global size `h` (reduced only where curved boundaries need it). Refinement acts on the
+  interfaces between phases, not on the cell faces, and grades with a constant ratio
+  (`growth`); the size field is periodic.
 - Periodic images are generated for every crossing of a periodic face, edge or corner,
   including inclusions larger than the cell.
 - Tolerances are relative to the cell size: cells of any size and origin work.
@@ -47,3 +49,12 @@ core = Intersect(Sphere(c, 0.25), Box(center = c, size = (L, L, L)))
 rve = RVE(Cell((1.0, 1.0, 1.0)), Phase(:inclusion, Cut(core, cross); refine = InterfaceRefinement(level = 2)))
 generate(rve; h = 0.1, output = "RVE.msh")
 ```
+
+Known limitations:
+
+- Bodies flush with a periodic face: the part of their boundary lying on the face is treated
+  as cell face (no interface refinement, no interface group there).
+- With refined inclusions the periodic size field makes meshing 1.5–5 times slower
+  (`MeshOptions(periodic_sizes = false)` to compare, a larger `growth` to speed it up).
+- Volumes of pieces bounded by B-spline surfaces (ellipsoids, non-uniform scalings) cut by a
+  face are computed by OpenCASCADE to about 1e-2.
