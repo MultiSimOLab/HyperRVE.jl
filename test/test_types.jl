@@ -94,6 +94,11 @@ end
     @test_throws MethodError MeshOptions(recombine=true)
     @test MeshOptions(optimize=false).optimize == :none
     @test MeshOptions().algorithm == :delaunay && MeshOptions().surface_algorithm == :frontal
+    @test MeshOptions().curvature == 6 && MeshOptions().optimize == :default && MeshOptions().optimize_curved == :none
+    o2 = MeshOptions(order=2)
+    @test o2.curvature == 12 && o2.optimize == :netgen && o2.optimize_curved == :elastic
+    o2s = MeshOptions(order=2, curved=false)
+    @test o2s.curvature == 6 && o2s.optimize == :default && o2s.optimize_curved == :none
     @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); output=joinpath(OUTDIR, "nodir", "x.msh"))
     @test_throws ArgumentError generate(RVE(c, Phase(:a, s)); h=0.1, mesh=MeshOptions(h=0.2))
     @test_logs (:warn, r"Fibre") RVE(c, Phase(:a, Cylinder((-0.1, 0.5, 0.5), (2, 0, 0), 0.1)))

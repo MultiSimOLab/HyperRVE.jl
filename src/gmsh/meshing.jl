@@ -132,18 +132,24 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{Interf
     gmsh.option.setNumber("Mesh.ElementOrder", 1)          # generation is always linear
     try
         gmsh.model.mesh.generate(D)
-        if opts.order == 2
-            # before restore_frame!: curved mid-nodes are projected on the (normalised) CAD
-            gmsh.option.setNumber("Mesh.SecondOrderLinear", opts.curved ? 0 : 1)
-            gmsh.option.setNumber("Mesh.HighOrderOptimize", 0)
-            gmsh.model.mesh.setOrder(2)
-            opts.optimize_curved == :none || gmsh.model.mesh.optimize(_HO[opts.optimize_curved])
-        end
     catch e
         e isa ErrorException || rethrow()
         alt = opts.algorithm == :delaunay ? "" : ", or try algorithm = :delaunay"
         error("Gmsh failed to mesh the RVE ($(e.msg)). Common causes: an inclusion crossing or " *
               "touching a face by a tiny amount (sliver), or a global size h much larger than the inclusions$alt.")
+    end
+    if opts.order == 2
+        # before restore_frame!: curved mid-nodes are projected on the (normalised) CAD
+        gmsh.option.setNumber("Mesh.SecondOrderLinear", opts.curved ? 0 : 1)
+        gmsh.option.setNumber("Mesh.HighOrderOptimize", 0)
+        try
+            gmsh.model.mesh.setOrder(2)
+            opts.optimize_curved == :none || gmsh.model.mesh.optimize(_HO[opts.optimize_curved])
+        catch e
+            e isa ErrorException || rethrow()
+            error("Gmsh failed to build or optimise the order-2 mesh ($(e.msg)); try curved = false " *
+                  "or another optimize_curved")
+        end
     end
     return nothing
 end
@@ -169,10 +175,11 @@ function mesh_stats(frame::Frame{D}, opts::MeshOptions, part::Partition) where {
     sj = opts.order == 2 ? gmsh.model.mesh.getElementQualities(tags, "minSJ") : nothing
     hist = zeros(Int, 10)
     for x in q
-        hist[clamp(floor(Int, 10x) + 1, 1, 10)] += 1
+        hist[isfinite(x) ? clamp(floor(Int, 10x) + 1, 1, 10) : 1] += 1
     end
     ninv = count(<=(0), sj === nothing ? q : sj)
-    w = argmin(q)
+    # worst element: the most inverted one for order 2, otherwise the lowest quality
+    w = sj !== nothing && ninv > 0 ? argmin(sj) : argmin(q)
     _, nodes, _, _ = gmsh.model.mesh.getElement(tags[w])
     pts = [gmsh.model.mesh.getNode(n)[1] for n in nodes]
     wp = Tuple(sum(pts) ./ length(pts))

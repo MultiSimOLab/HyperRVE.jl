@@ -53,7 +53,6 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
         mesh.h === nothing || throw(ArgumentError("give the global size either as h or as mesh.h, not both"))
         mesh = _with(mesh; h=_positive(h, "h"))
     end
-    _check(mesh)
     mesh.optimize_curved == :optimize && any(rve.cell.periodic) &&
         throw(ArgumentError("optimize_curved = :optimize moves nodes of periodic faces; use :elastic for periodic cells"))
     files = output === nothing ? String[] :
@@ -89,10 +88,13 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
             if stats.min_quality < 0.02 || stats.ninverted > 0
                 @warn "generate: poor element quality (minimum SICN $(round(stats.min_quality; sigdigits=2)), " *
                       "$(stats.ninverted) inverted) in phase $(stats.worst_phase) near " *
-                      "$(round.(stats.worst_point; sigdigits=4)). Common causes: a thin ligament between " *
-                      "inclusions or between an inclusion and a face that is coarser than the local size; " *
-                      "refine that phase (refine = ..., or Phase h), increase the gap, reduce h, or use " *
-                      "optimize = :netgen" * (stats.order == 2 ? "; for curved order 2: optimize_curved = :elastic or curved = false" : "") * "."
+                      "$(round.(stats.worst_point; sigdigits=4)). " *
+                      (stats.order == 2 && stats.ninverted > 0 ?
+                       "Curved order-2 elements are inverted where the mesh is coarse compared with the curvature: " *
+                       "refine that phase, raise MeshOptions(curvature = ...), use optimize_curved = :elastic or curved = false." :
+                       "Common causes: a thin ligament between inclusions or between an inclusion and a face that is " *
+                       "coarser than the local size; refine that phase (refine = ..., or Phase h), increase the gap, " *
+                       "reduce h, or use optimize = :netgen.")
             end
         end
         for p in files

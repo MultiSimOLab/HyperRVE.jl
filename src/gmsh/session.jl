@@ -11,7 +11,7 @@ const _SESSION_OPTIONS = ("General.Terminal", "Geometry.OCCBoundsUseStl", "Mesh.
                           "Mesh.MshFileVersion", "Mesh.SaveAll", "Mesh.Binary", "Mesh.MeshSizeMin",
                           "Mesh.MeshSizeMax", "General.NumThreads", "Mesh.Algorithm", "Mesh.Algorithm3D",
                           "Mesh.Optimize", "Mesh.OptimizeNetgen", "Mesh.ElementOrder", "Mesh.SecondOrderLinear",
-                          "Mesh.HighOrderOptimize")
+                          "Mesh.HighOrderOptimize", "Mesh.HighOrderSavePeriodic")
 
 function _unique_model_name(name)
     names = gmsh.model.list()
@@ -39,6 +39,7 @@ function _with_session(f, name::AbstractString; keep_open::Bool, verbosity::Int)
         gmsh.option.setNumber("Mesh.SaveAll", 0)
         gmsh.option.setNumber("Mesh.Binary", 0)
         gmsh.option.setNumber("General.NumThreads", 1)   # Param size fields are not thread-safe
+        gmsh.option.setNumber("Mesh.HighOrderSavePeriodic", 1)   # write mid-node pairs in $Periodic
         gmsh.model.add(model)
         r = f(model)
         ok = true
@@ -91,14 +92,17 @@ function write_mesh(r::RVEMesh, path::AbstractString)
     isdir(dirname(p)) || throw(ArgumentError("output directory $(dirname(p)) does not exist"))
     v = gmsh.option.getNumber("Mesh.MshFileVersion")
     b = gmsh.option.getNumber("Mesh.Binary")
+    hp = gmsh.option.getNumber("Mesh.HighOrderSavePeriodic")
     gmsh.option.setNumber("Mesh.MshFileVersion", 4.1)
     gmsh.option.setNumber("Mesh.Binary", 0)
+    gmsh.option.setNumber("Mesh.HighOrderSavePeriodic", 1)
     try
         gmsh.write(p)
         _physical_periodic_affine!(p, Frame(r.rve))
     finally
         gmsh.option.setNumber("Mesh.MshFileVersion", v)
         gmsh.option.setNumber("Mesh.Binary", b)
+        gmsh.option.setNumber("Mesh.HighOrderSavePeriodic", hp)
         previous in gmsh.model.list() && gmsh.model.setCurrent(previous)
     end
     p in r.files || push!(r.files, p)

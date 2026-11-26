@@ -59,10 +59,17 @@ end
     end
     # coarse curved mesh: inverted elements are reported (and warned), :elastic fixes them
     coarse = RVE(unitcell(), Phase(:p, Sphere((0, 0, 0), 0.25)))
-    bad = @test_logs (:warn, r"inverted") match_mode = :any generate(coarse; h=0.2, mesh=MeshOptions(order=2))
+    bad = @test_logs (:warn, r"[1-9][0-9]* inverted") match_mode = :any generate(coarse; h=0.2,
+                                                       mesh=MeshOptions(order=2, curvature=6, optimize=:default, optimize_curved=:none))
     @test bad.stats.ninverted > 0
-    good = generate(coarse; h=0.2, mesh=MeshOptions(order=2, optimize_curved=:elastic))
+    good = generate(coarse; h=0.2, mesh=MeshOptions(order=2))          # :auto -> netgen + elastic
+    @test good.options.optimize_curved == :elastic
     @test good.stats.ninverted == 0 && all(c -> c.ok, good.periodicity)
+    # the canonical cases with the default size have no inverted elements by default
+    for g in (Sphere((0.5, 0.5, 0.5), 0.25), Sphere((0, 0, 0), 0.25), Sphere((0.5, 0.5, 0.5), 0.06))
+        r = generate(RVE(unitcell(), Phase(:p, g)); mesh=MeshOptions(order=2))
+        @test r.stats.ninverted == 0 && all(c -> c.ok, r.periodicity)
+    end
     @test_throws ArgumentError generate(coarse; h=0.2, mesh=MeshOptions(order=2, optimize_curved=:optimize))
     np = generate(RVE(unitcell(periodic=false), Phase(:p, Sphere((0.5, 0.5, 0.5), 0.25))); h=0.2,
                   mesh=MeshOptions(order=2, optimize_curved=:optimize))
@@ -84,6 +91,28 @@ end
         linked = count(e -> gmsh.model.mesh.getPeriodicNodes(e...)[1] != e[2], gmsh.model.getEntities(2))
         @test linked > 0
         @test elem_order() == 2
+    finally
+        gmsh.finalize()
+    end
+    # the $Periodic block lists the mid-nodes as well (not only the vertices)
+    lines = readlines(f)
+    i = findfirst(==("\$Periodic"), lines)
+    npairs = 0
+    j = i + 2
+    for _ in 1:parse(Int, lines[i+1])
+        j += 2
+        n = parse(Int, lines[j]); npairs += n; j += n + 1
+    end
+    gmsh.initialize(String[], false)
+    try
+        gmsh.option.setNumber("General.Terminal", 0)
+        gmsh.open(f)
+        nface = 0
+        for (d, t) in gmsh.model.getEntities(2)
+            m, nt, _, _ = gmsh.model.mesh.getPeriodicNodes(d, t, true)
+            m != t && (nface += length(nt))
+        end
+        @test npairs >= nface > 0
     finally
         gmsh.finalize()
     end
@@ -120,7 +149,70 @@ end
     io = IOBuffer()
     quality_report(io, res)
     out = String(take!(io))
-    @test occursin("[0.9, 1.0)", out) && occursin("worst element", out) && occursin("matrix", out)
+    @test occursin("[0.9, 1.0]", out) && occursin("worst element", out) && occursin("matrix", out)
     io2 = IOBuffer(); quality_report(io2, generate(RVE(unitcell(), Phase(:p, Sphere((0.5, 0.5, 0.5), 0.2))); geometry_only=true))
     @test occursin("no mesh", String(take!(io2)))
+end
+
+@testset "options reach Gmsh and statistics are right (mutations)" begin
+    rve = RVE(unitcell(), [Phase(:a, Sphere((0.3, 0.5, 0.5), 0.15); refine=0.05), Phase(:b, Sphere((0.75, 0.5, 0.5), 0.15))])
+    generate(rve; h=0.15, mesh=MeshOptions(algorithm=:frontal, surface_algorithm=:meshadapt, optimize=:netgen)) do r
+        @test gmsh.option.getNumber("Mesh.Algorithm3D") == 4
+        @test gmsh.option.getNumber("Mesh.Algorithm") == 1
+        @test gmsh.option.getNumber("Mesh.OptimizeNetgen") == 1
+    end
+    generate(rve; h=0.15, mesh=MeshOptions(optimize=:none)) do r
+        @test gmsh.option.getNumber("Mesh.Optimize") == 0
+    end
+    for opts in (MeshOptions(), MeshOptions(order=2, curvature=6, optimize=:default, optimize_curved=:none))
+        generate(RVE(unitcell(), [Phase(:a, Sphere((0, 0, 0), 0.25)), Phase(:b, Sphere((0.5, 0.5, 0.5), 0.2))]);
+                 h=0.2, mesh=opts) do r
+            s = r.stats
+            tags = Int[]; own = String[]
+            for p in r.phases, e in p.entities
+                _, et, _ = gmsh.model.mesh.getElements(3, e)
+                for t in et
+                    append!(tags, t); append!(own, fill(p.name, length(t)))
+                end
+            end
+            q = gmsh.model.mesh.getElementQualities(tags, "minSICN")
+            hist = zeros(Int, 10)
+            for x in q
+                hist[clamp(floor(Int, 10x) + 1, 1, 10)] += 1
+            end
+            @test collect(s.quality_histogram) == hist
+            for (name, pq) in s.phase_quality
+                @test pq == minimum(q[own .== name])
+            end
+            if s.order == 2
+                sj = gmsh.model.mesh.getElementQualities(tags, "minSJ")
+                @test s.min_jacobian == minimum(sj)
+                @test s.ninverted == count(<=(0), sj)
+                w = s.ninverted > 0 ? argmin(sj) : argmin(q)
+            else
+                @test s.ninverted == count(<=(0), q)
+                w = argmin(q)
+            end
+            @test s.worst_phase == own[w]
+            _, nodes, _, _ = gmsh.model.mesh.getElement(tags[w])
+            c = sum(gmsh.model.mesh.getNode(n)[1] for n in nodes) ./ length(nodes)
+            @test all(isapprox.(s.worst_point, Tuple(c); atol=1e-12))
+        end
+    end
+    # caller-owned session: the meshing options are restored by name
+    gmsh.initialize(String[], false)
+    try
+        gmsh.option.setNumber("General.Terminal", 0)
+        for (o, v) in (("Mesh.Algorithm3D", 4), ("Mesh.Algorithm", 5), ("Mesh.OptimizeNetgen", 1), ("Mesh.ElementOrder", 2),
+                       ("Mesh.SecondOrderLinear", 1), ("Mesh.HighOrderOptimize", 2), ("Mesh.HighOrderSavePeriodic", 0))
+            gmsh.option.setNumber(o, v)
+        end
+        generate(rve; h=0.2, mesh=MeshOptions(order=2))
+        @test gmsh.option.getNumber("Mesh.Algorithm3D") == 4 && gmsh.option.getNumber("Mesh.Algorithm") == 5
+        @test gmsh.option.getNumber("Mesh.OptimizeNetgen") == 1 && gmsh.option.getNumber("Mesh.ElementOrder") == 2
+        @test gmsh.option.getNumber("Mesh.SecondOrderLinear") == 1 && gmsh.option.getNumber("Mesh.HighOrderOptimize") == 2
+        @test gmsh.option.getNumber("Mesh.HighOrderSavePeriodic") == 0
+    finally
+        gmsh.finalize()
+    end
 end

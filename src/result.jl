@@ -99,7 +99,7 @@ function quality_report(io::IO, r::RVEMesh{D}) where {D}
     n = max(s.nelements, 1)
     for (i, c) in enumerate(s.quality_histogram)
         bar = repeat("█", round(Int, 40 * c / n))
-        println(io, @sprintf("  [%.1f, %.1f)  %8d  %5.1f%%  %s", (i - 1) / 10, i / 10, c, 100c / n, bar))
+        println(io, @sprintf("  [%.1f, %.1f%s  %8d  %5.1f%%  %s", (i - 1) / 10, i / 10, i == 10 ? "]" : ")", c, 100c / n, bar))
     end
     for (p, q) in s.phase_quality
         println(io, @sprintf("  %-14s min quality %.3f", p, q))

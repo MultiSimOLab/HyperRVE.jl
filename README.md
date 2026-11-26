@@ -78,7 +78,7 @@ phase, and `refine = 0.02` the size on the interfaces of a phase, graded with a 
 inclusion close to a face also refines the opposite face, so periodic meshes stay well shaped.
 
 Element order, meshing algorithms and optimisation are set with `MeshOptions(order = 2,
-algorithm = :hxt, optimize = :netgen, ...)`; `quality_report(res)` prints the quality
+algorithm = :frontal, optimize = :netgen, ...)`; `quality_report(res)` prints the quality
 histogram, the minimum per phase and the location of the worst element.
 
 `generate` opens and closes Gmsh by itself and returns plain Julia data (phase volumes and
