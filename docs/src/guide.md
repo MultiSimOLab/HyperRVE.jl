@@ -175,6 +175,20 @@ RVE(cell, [Phase(:hard, hard), Phase(:soft, soft)]; overlaps = :error)
 random_disks(Cell((2.0, 2.0)); radius = 0.04, fraction = 0.15, cluster = (n = 5, radius = 0.3), rng = 5)
 ```
 
+Short fibres: `random_capsules(cell; length, radius, fraction | n, orientation)` places
+non-overlapping capsules (`length` between the cap centres) with `orientation = :isotropic`,
+`:planar` (with `axis`), a direction, or a function `rng -> direction`; the other keywords as
+above, `avoid` included (hybrid particle + fibre composites). `orientation_tensor(fibres)` gives
+the second-order orientation tensor. Random sequential addition of slender isotropic fibres
+saturates early (about 0.15 for a total aspect ratio of 10); aligned fibres reach about 0.3.
+Refine the fibre phase to about half the radius.
+
+```julia
+f = random_capsules(cell; length = 0.3, radius = 0.04, fraction = 0.025, rng = 1)
+RVE(cell, Phase(:fibres, f; refine = 0.03))
+orientation_tensor(f)          # ≈ I/3
+```
+
 ## Particle chains (magnetorheological elastomers)
 
 `particle_chains(cell; axis, radius, gap, fraction | n_chains)` places spheres (disks in 2D)
