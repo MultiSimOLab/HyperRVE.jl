@@ -93,7 +93,7 @@ end
     @test_throws ArgumentError MeshOptions(order=2, curved=false, optimize_curved=:fast)
     @test_throws MethodError MeshOptions(recombine=true)
     @test MeshOptions(optimize=false).optimize == :none
-    @test MeshOptions().algorithm == :delaunay && MeshOptions().surface_algorithm == :frontal
+    @test MeshOptions().algorithm == :delaunay && MeshOptions().surface_algorithm == :default
     @test MeshOptions().curvature == 6 && MeshOptions().optimize == :default && MeshOptions().optimize_curved == :none
     o2 = MeshOptions(order=2)
     @test o2.curvature == 12 && o2.optimize == :netgen && o2.optimize_curved == :elastic

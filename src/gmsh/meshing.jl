@@ -35,7 +35,7 @@ function _level_size(ℓ, level, H)
 end
 
 function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{InterfaceSurface},
-               opts::MeshOptions) where {D}
+               opts::MeshOptions, on::BoundaryEntities=_boundary_entities(rve, frame)) where {D}
     f = gmsh.model.mesh.field
     S(x) = to_frame_length(frame, x)
     h = S(something(opts.h, minimum(rve.cell.size) / 10))
@@ -126,6 +126,20 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{Interf
     # hmin is a hard lower bound: it wins over the bulk sizes as well
     gmsh.option.setNumber("Mesh.MeshSizeMax", max(opts.hmax === nothing ? H : S(opts.hmax), hmin))
     gmsh.option.setNumber("Mesh.Algorithm", _ALG2D[opts.surface_algorithm])
+    if opts.surface_algorithm == :default && D == 3
+        # Frontal-Delaunay produces no elements on B-spline surfaces (dilated spheres) lying
+        # inside the cell; MeshAdapt meshes them. Surfaces touching the cell faces keep
+        # Frontal-Delaunay (MeshAdapt there can break the periodic matching of their curves).
+        onface(v) = any(f -> haskey(on.planes, (Int32(2), Int32(abs(f[2])))),
+                        gmsh.model.getBoundary([(3, v)], false, false, false))
+        for (_, t) in gmsh.model.getEntities(2)
+            gmsh.model.getType(2, t) == "BSpline surface" || continue
+            up, _ = gmsh.model.getAdjacencies(2, t)
+            # the inclusion pieces bounded by this surface (not the matrix) must be interior
+            pieces = [v for v in up if get(part.piece_item, Int32(v), (0, 0))[1] != 0]
+            any(onface, pieces) || gmsh.model.mesh.setAlgorithm(2, t, 1)
+        end
+    end
     gmsh.option.setNumber("Mesh.Algorithm3D", _ALG3D[opts.algorithm])
     gmsh.option.setNumber("Mesh.Optimize", opts.optimize == :none ? 0 : 1)
     gmsh.option.setNumber("Mesh.OptimizeNetgen", opts.optimize == :netgen ? 1 : 0)

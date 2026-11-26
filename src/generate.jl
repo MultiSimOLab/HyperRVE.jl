@@ -94,7 +94,7 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
         stats = nothing
         checks = PeriodicityCheck[]
         if !geometry_only
-            mesh!(rve, frame, part, ifs, mesh)
+            mesh!(rve, frame, part, ifs, mesh, on)
             restore_frame!(frame)
             check_periodicity && (checks = verify_periodicity(rve, frame))
             stats = mesh_stats(frame, mesh, part)

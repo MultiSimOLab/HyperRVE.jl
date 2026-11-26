@@ -124,7 +124,7 @@ end
         r = generate(rve; h=0.15, mesh=MeshOptions(algorithm=alg))
         @test all(c -> c.ok, r.periodicity) && r.stats.min_quality > 0
     end
-    for salg in (:frontal, :delaunay, :meshadapt, :automatic)
+    for salg in (:default, :frontal, :delaunay, :meshadapt, :automatic)
         r = generate(rve; h=0.15, mesh=MeshOptions(surface_algorithm=salg))
         @test all(c -> c.ok, r.periodicity) && r.stats.min_quality > 0
     end
@@ -215,4 +215,19 @@ end
     finally
         gmsh.finalize()
     end
+end
+
+@testset "interior B-spline bodies are meshed (default surface algorithm)" begin
+    c = (0.5, 0.5, 0.5)
+    for g in (Ellipsoid(c, (0.35, 0.12, 0.12)), Rotate(Ellipsoid(c, (0.35, 0.12, 0.12)); axis=(1, 1, 0), angle=π / 4),
+              Scale(Sphere(c, 0.1), (3.5, 1.2, 1.2)))
+        for per in (true, false)
+            generate(RVE(unitcell(periodic=per), Phase(:p, g)); h=0.15) do r
+                @test r.stats.nelements > 0
+                @test mesh_volume() ≈ 1 rtol = 1e-9
+            end
+        end
+    end
+    sup = generate(supercell(RVE(unitcell(), Phase(:p, Ellipsoid(c, (0.3, 0.1, 0.1)))), (2, 2, 1)); h=0.2)
+    @test sup.stats.nelements > 0 && all(x -> x.ok, sup.periodicity)
 end
