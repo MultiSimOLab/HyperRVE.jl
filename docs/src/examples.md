@@ -15,5 +15,6 @@ mesh next to the script.
 | `08_coated_particle_interfaces.jl` | overlapping phases and interface groups |
 | `09_porous.jl` | no matrix: porous solid and its pore walls |
 | `10_strut_lattices.jl` | strut lattices: presets by density, in a matrix, custom topology, finite block |
+| `11_random_packings.jl` | random spheres (target fraction, size distribution), aligned fibres, disks |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.
