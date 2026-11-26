@@ -313,10 +313,19 @@ end
 
 The rectangular periodic cell of a 2D preset lattice with strut length `a` (see
 [`lattice_topology`](@ref)); `lattice(lattice_cell(:honeycomb; a = 0.2), :honeycomb; thickness = 0.02)`.
+Also the cells of the auxetic kinds: [`chiral`](@ref) lattices (`a` = distance between connected
+rings) and [`rotating_squares`](@ref), [`rotating_triangles`](@ref) (`a` = side of the units,
+with their `angle`).
 """
 function lattice_cell(kind::Symbol; a=1.0, angle=nothing, ratio=nothing, origin=nothing)
-    t = lattice_topology(kind, Val(2); angle, ratio)
-    return Cell(_positive(a, "lattice_cell a") .* t.size; origin=origin)
+    if kind in _AUXETIC
+        ratio === nothing || throw(ArgumentError("lattice_cell: ratio applies only to :reentrant"))
+        kind in _CHIRAL && angle !== nothing && throw(ArgumentError("lattice_cell: angle does not apply to $(repr(kind))"))
+        sz = _auxetic_size(kind, angle)
+    else
+        sz = lattice_topology(kind, Val(2); angle, ratio).size
+    end
+    return Cell(_positive(a, "lattice_cell a") .* sz; origin=origin)
 end
 
 """
@@ -328,6 +337,8 @@ in its rectangular periodic cell, which must have the proportions of
 `Phase(:lattice, lattice(cell, :reentrant; thickness = 0.05); fuse = true)`.
 """
 function lattice(cell::Cell{2}, kind::Symbol; thickness=nothing, radius=nothing, node_radius=:auto, angle=nothing, ratio=nothing)
+    kind in _CHIRAL && throw(ArgumentError("lattice: $(repr(kind)) is built with chiral(cell, $(repr(kind)); ring_radius, thickness)"))
+    kind in _ROTATING && throw(ArgumentError("lattice: $(repr(kind)) is built with $kind(cell; angle, hinge)"))
     (thickness === nothing) != (radius === nothing) || throw(ArgumentError("lattice: give thickness (or radius = thickness / 2)"))
     t = lattice_topology(kind, Val(2); angle, ratio)
     abs(cell.size[1] / cell.size[2] - t.size[1] / t.size[2]) <= 1e-6 * t.size[1] / t.size[2] ||

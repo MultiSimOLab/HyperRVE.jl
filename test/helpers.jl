@@ -48,3 +48,39 @@ function brute_periodic_match_2d(fmin, fmax, dir, L; tol=1e-8 * L)
     end
     return true
 end
+
+"""
+Connected components of the 2D mesh of physical group `name`, joining elements that share an
+edge and identifying the nodes of opposite sides of the periodic cell (points do not connect).
+"""
+function periodic_components_2d(cell, name; tol=1e-7)
+    L, o = cell.size, cell.origin
+    tag = only(t for (d, t) in gmsh.model.getPhysicalGroups(2) if gmsh.model.getPhysicalName(d, t) == name)
+    key = Dict{Int,NTuple{2,Int}}()
+    elems = Vector{Vector{Int}}()
+    for e in gmsh.model.getEntitiesForPhysicalGroup(2, tag)
+        nt, xyz, _ = gmsh.model.mesh.getNodes(2, e, true)
+        for (k, n) in enumerate(nt)
+            f = ((xyz[3k-2] - o[1]) / L[1], (xyz[3k-1] - o[2]) / L[2])
+            key[Int(n)] = map(x -> round(Int, (x - floor(x + tol)) / tol), f)
+        end
+        for (t, nn) in zip(gmsh.model.mesh.getElements(2, e)[[1, 3]]...)
+            nv = gmsh.model.mesh.getElementProperties(t)[6]       # corner nodes
+            np = gmsh.model.mesh.getElementProperties(t)[4]
+            for c in 1:np:length(nn)
+                push!(elems, [Int(nn[c+k]) for k in 0:nv-1])
+            end
+        end
+    end
+    parent = collect(eachindex(elems))
+    find(x) = (while parent[x] != x; parent[x] = parent[parent[x]]; x = parent[x]; end; x)
+    owner = Dict{Any,Int}()
+    for (i, el) in enumerate(elems), k in eachindex(el)
+        a, b = key[el[k]], key[el[mod1(k + 1, length(el))]]
+        ed = a < b ? (a, b) : (b, a)
+        j = get!(owner, ed, i)
+        ri, rj = find(i), find(j)
+        ri == rj || (parent[ri] = rj)
+    end
+    return length(unique(find(i) for i in eachindex(elems)))
+end

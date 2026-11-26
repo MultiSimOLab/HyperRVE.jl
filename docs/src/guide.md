@@ -104,6 +104,26 @@ bcc, kelvin and diamond a larger node sphere changes the joint and the density.
 - `relative_density(kind, t / a)` gives the exact area fraction of the 2D square, triangular,
   honeycomb and kagome lattices.
 
+## Auxetic 2D cells
+
+- `chiral(cell, kind; ring_radius, thickness, mirror = false, filled = false)`: rings of mean
+  radius `ring_radius` joined by tangent ligaments, all of width `thickness`. `kind` is
+  `:hexachiral`, `:tetrachiral`, `:trichiral` or the anti-chiral `:antitetrachiral`,
+  `:antitrichiral`. `mirror` flips the handedness and `filled` makes the rings solid disks.
+  The cell is `lattice_cell(kind; a)` with `a` the distance between connected rings.
+- `rotating_squares(cell; angle, hinge)` and `rotating_triangles(cell; angle, hinge)`: rigid
+  units of side `a` turned by `angle` from the closed state and joined at the corners by
+  disks of diameter `hinge`; the cell is `lattice_cell(kind; a, angle)`.
+- `relative_density(kind; ring_radius, thickness)` and `relative_density(kind; angle, hinge)`
+  give the exact solid fraction, with lengths divided by `a`.
+
+```julia
+c = lattice_cell(:hexachiral; a = 1.0)
+Phase(:lattice, chiral(c, :hexachiral; ring_radius = 0.2, thickness = 0.04); fuse = true)
+c = lattice_cell(:rotating_squares; a = 1.0, angle = π / 6)
+Phase(:squares, rotating_squares(c; angle = π / 6, hinge = 0.08); fuse = true)
+```
+
 ## Random packings
 
 `random_spheres(cell; ...)`, `random_disks(cell; ...)` (2D) and `random_fibres(cell; axis, ...)`

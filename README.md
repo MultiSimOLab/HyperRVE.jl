@@ -41,6 +41,9 @@ can be read directly with GridapGmsh.
 <tr>
 <td align="center"><img src="docs/imgs/gallery/reentrant.png" width="180"><br>re-entrant (auxetic) 2D</td>
 <td align="center"><img src="docs/imgs/gallery/kagome.png" width="180"><br>kagome 2D</td>
+<td align="center"><img src="docs/imgs/gallery/hexachiral.png" width="180"><br>hexachiral (auxetic)</td>
+<td align="center"><img src="docs/imgs/gallery/antitetrachiral.png" width="180"><br>anti-tetrachiral</td>
+<td align="center"><img src="docs/imgs/gallery/rotating_squares.png" width="180"><br>rotating squares</td>
 </tr>
 </table>
 
@@ -57,6 +60,7 @@ random_spheres(cell; radius = 0.1, fraction = 0.2, rng = 3)                     
 particle_array(cell, :fcc; fraction = 0.3)                                             # regular array
 laminate(cell; axis = 3, fractions = (0.3, 0.7))                                       # laminate (phases)
 lattice(lattice_cell(:reentrant; a = 0.25), :reentrant; thickness = 0.025)             # 2D auxetic lattice
+chiral(lattice_cell(:hexachiral; a = 0.5), :hexachiral; ring_radius = 0.1, thickness = 0.02)  # chiral (auxetic)
 ```
 
 # Examples
