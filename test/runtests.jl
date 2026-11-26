@@ -19,6 +19,7 @@ include("helpers.jl")
     @testset "Strut lattices" begin include("test_lattices.jl") end
     @testset "More lattices (BCCZ, FCCZ, 2D)" begin include("test_lattices_more.jl") end
     @testset "Random packings" begin include("test_random.jl") end
+    @testset "Mixtures and clusters" begin include("test_mixtures.jl") end
     @testset "Polyhedra and polygons" begin include("test_polyhedra.jl") end
     @testset "Voronoi tessellations" begin include("test_voronoi.jl") end
     @testset "Void phases and foams" begin include("test_foams.jl") end

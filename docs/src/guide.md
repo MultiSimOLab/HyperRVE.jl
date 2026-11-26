@@ -157,6 +157,24 @@ Dense packings leave ligaments of width `min_gap` between inclusions: the mesh m
 them (`refine` on the phase or a smaller `h`), or raise `min_gap`; otherwise Gmsh may leave
 pieces unmeshed and `generate` reports it.
 
+Mixtures and clusters:
+
+- `avoid = items` packs a new population around inclusions already placed (another packing,
+  `particle_chains`, or geometries made by hand), at least `min_gap` from them, periodic images
+  included. One call and one phase per population, the largest first; each `fraction` refers to
+  the whole cell. Spheres, disks, capsules and axis-parallel fibres are avoided exactly;
+  cylinders, ellipsoids and ellipses through the capsule that contains them.
+- `cluster = (n = 4, radius = 0.2)` places the inclusions uniformly in balls of radius `radius`
+  around `n` random centres (or `centers = [...]`); `share = s` sends only a fraction `s` of the
+  attempts to the clusters.
+
+```julia
+hard = random_spheres(cell; radius = 0.14, fraction = 0.10, rng = 1)
+soft = random_spheres(cell; radius = 0.09, fraction = 0.06, avoid = hard, rng = 2)
+RVE(cell, [Phase(:hard, hard), Phase(:soft, soft)]; overlaps = :error)
+random_disks(Cell((2.0, 2.0)); radius = 0.04, fraction = 0.15, cluster = (n = 5, radius = 0.3), rng = 5)
+```
+
 ## Particle chains (magnetorheological elastomers)
 
 `particle_chains(cell; axis, radius, gap, fraction | n_chains)` places spheres (disks in 2D)
