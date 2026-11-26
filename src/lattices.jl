@@ -41,6 +41,7 @@ common in additive manufacturing), `:octet` (all nearest neighbours of FCC), `:k
 """
 function lattice_topology(kind::Symbol; kwargs...)
     kind in _PRESETS_2D && return lattice_topology(kind, Val(2); kwargs...)
+    kind in _AUXETIC && return lattice_topology(kind, Val(2); kwargs...)
     isempty(kwargs) || throw(ArgumentError("lattice_topology: angle and ratio apply to 2D lattices only"))
     haskey(_PRESET_NODES, kind) ||
         throw(ArgumentError("unknown lattice $(repr(kind)); presets: $(join(sort(collect(keys(_PRESET_NODES))), ", "))"))
@@ -200,6 +201,9 @@ function relative_density(kind::Symbol, x::Real)
         0 < x < 0.5 || throw(ArgumentError("relative_density(:$kind, x): x = thickness / strut length must be in (0, 0.5)"))
         return _DENSITY_2D[kind](x)
     end
+    kind in _AUXETIC && throw(ArgumentError("relative_density($(repr(kind))): use the keywords, " *
+                                            (kind in _CHIRAL ? "relative_density($(repr(kind)); ring_radius, thickness)" :
+                                                               "relative_density($(repr(kind)); angle, hinge)")))
     haskey(_DENSITY, kind) || throw(ArgumentError("unknown lattice $(repr(kind))"))
     c1, c2, xmax = _DENSITY[kind]
     0 < x <= xmax * (1 + 1e-12) || throw(ArgumentError("relative_density(:$kind, x) is exact for 0 < x <= $xmax; " *
@@ -218,6 +222,9 @@ Strut radius divided by the cell edge that gives the relative `density` for a pr
 (inverse of [`relative_density`](@ref)).
 """
 function strut_radius(kind::Symbol, ρ::Real)
+    kind in _AUXETIC && throw(ArgumentError("relative_density($(repr(kind))): use the keywords, " *
+                                            (kind in _CHIRAL ? "relative_density($(repr(kind)); ring_radius, thickness)" :
+                                                               "relative_density($(repr(kind)); angle, hinge)")))
     haskey(_DENSITY, kind) || throw(ArgumentError("unknown lattice $(repr(kind))"))
     c1, c2, xmax = _DENSITY[kind]
     0 < ρ <= relative_density(kind, xmax) ||
@@ -305,7 +312,10 @@ function lattice_topology(kind::Symbol, ::Val{2}; angle=nothing, ratio=nothing)
         edges = [(i, j, Tuple(o .+ sh[j] .- sh[i])) for (i, j, o) in edges]
         return (nodes=nodes, edges=edges, size=(W, H))
     end
-    throw(ArgumentError("unknown 2D lattice $(repr(kind)); presets: $(join(_PRESETS_2D, ", "))"))
+    kind in _AUXETIC && throw(ArgumentError("$(repr(kind)) has no strut topology; build it with " *
+                                            (kind in _CHIRAL ? "chiral(cell, $(repr(kind)); ring_radius, thickness)" : "$kind(cell; angle, hinge)")))
+    throw(ArgumentError("unknown 2D lattice $(repr(kind)); presets: $(join(_PRESETS_2D, ", ")) " *
+                        "(auxetic cells: $(join(_AUXETIC, ", ")))"))
 end
 
 """
@@ -313,10 +323,19 @@ end
 
 The rectangular periodic cell of a 2D preset lattice with strut length `a` (see
 [`lattice_topology`](@ref)); `lattice(lattice_cell(:honeycomb; a = 0.2), :honeycomb; thickness = 0.02)`.
+Also the cells of the auxetic kinds: [`chiral`](@ref) lattices (`a` = distance between connected
+rings) and [`rotating_squares`](@ref), [`rotating_triangles`](@ref) (`a` = side of the units,
+with their `angle`).
 """
 function lattice_cell(kind::Symbol; a=1.0, angle=nothing, ratio=nothing, origin=nothing)
-    t = lattice_topology(kind, Val(2); angle, ratio)
-    return Cell(_positive(a, "lattice_cell a") .* t.size; origin=origin)
+    if kind in _AUXETIC
+        ratio === nothing || throw(ArgumentError("lattice_cell: ratio applies only to :reentrant"))
+        kind in _CHIRAL && angle !== nothing && throw(ArgumentError("lattice_cell: angle does not apply to $(repr(kind))"))
+        sz = _auxetic_size(kind, angle)
+    else
+        sz = lattice_topology(kind, Val(2); angle, ratio).size
+    end
+    return Cell(_positive(a, "lattice_cell a") .* sz; origin=origin)
 end
 
 """
@@ -328,6 +347,8 @@ in its rectangular periodic cell, which must have the proportions of
 `Phase(:lattice, lattice(cell, :reentrant; thickness = 0.05); fuse = true)`.
 """
 function lattice(cell::Cell{2}, kind::Symbol; thickness=nothing, radius=nothing, node_radius=:auto, angle=nothing, ratio=nothing)
+    kind in _CHIRAL && throw(ArgumentError("lattice: $(repr(kind)) is built with chiral(cell, $(repr(kind)); ring_radius, thickness)"))
+    kind in _ROTATING && throw(ArgumentError("lattice: $(repr(kind)) is built with $kind(cell; angle, hinge)"))
     (thickness === nothing) != (radius === nothing) || throw(ArgumentError("lattice: give thickness (or radius = thickness / 2)"))
     t = lattice_topology(kind, Val(2); angle, ratio)
     abs(cell.size[1] / cell.size[2] - t.size[1] / t.size[2]) <= 1e-6 * t.size[1] / t.size[2] ||

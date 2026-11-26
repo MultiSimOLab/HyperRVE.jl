@@ -24,6 +24,7 @@ include("helpers.jl")
     @testset "Void phases and foams" begin include("test_foams.jl") end
     @testset "Particle chains" begin include("test_chains.jl") end
     @testset "Particle arrays and laminates" begin include("test_arrays.jl") end
+    @testset "Auxetic 2D cells" begin include("test_auxetic.jl") end
     @testset "Session" begin include("test_session.jl") end
     @testset "Robustness" begin include("test_robustness.jl") end
     @testset "Aqua" begin Aqua.test_all(HyperRVE) end

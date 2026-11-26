@@ -21,5 +21,6 @@ mesh next to the script.
 | `14_particle_chains.jl` | field-structured MRE: particle chains, isotropic reference, variants, 2D |
 | `15_more_lattices.jl` | BCCZ and FCCZ lattices; 2D square, triangular, honeycomb, kagome and re-entrant (auxetic) lattices |
 | `16_arrays_and_laminates.jl` | regular particle arrays (SC, BCC, FCC, hexagonal 2D) and laminates |
+| `17_auxetic_cells.jl` | chiral and anti-chiral lattices, rotating squares and triangles (auxetic 2D) |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.

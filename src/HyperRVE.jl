@@ -24,6 +24,7 @@ export Tessellation, voronoi, grains, grain_phases, grain_volumes
 export tessellation_edges, foam_struts, pores, wall_thickness
 export particle_chains
 export particle_array, laminate
+export chiral, rotating_squares, rotating_triangles
 export MeshOptions, InterfaceRefinement
 export generate, RVEMesh, write_mesh, view_mesh, close_gmsh, PeriodicityError
 export volume, volume_fraction, volume_fractions, phase_names, group_names, group_tag, quality_report
@@ -41,6 +42,7 @@ include("voronoi.jl")
 include("foams.jl")
 include("chains.jl")
 include("arrays.jl")
+include("auxetic.jl")
 include("frame.jl")
 include("result.jl")
 include("gmsh/session.jl")
