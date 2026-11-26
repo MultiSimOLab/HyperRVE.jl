@@ -36,7 +36,12 @@ increasing axial coordinate; use them in a phase without `fuse`.
   radius) bends the chains with `modes` smooth periodic modes (the in-chain gap never
   decreases); `aspect ≠ 1` gives spheroids (ellipses) elongated along the chain.
 
-Reachable fractions with `gap = 0.1 r`: about 0.3 with random chains, 0.5 square, 0.55 hexagonal.
+Reachable fractions with `gap = 0.1 r`: about 0.28 with random chains, 0.45 square, 0.52
+hexagonal. `fraction` is counted before `occupancy`. Wavy chains are packed with their
+amplitude as extra clearance, which leaves a thin particle-free layer next to periodic faces.
+`stagger = :alternate` alternates neighbouring chains only for even counts along periodic
+directions, and only along a periodic chain axis. Along free lateral faces the chains may be
+cut by the face, as the inclusions of [`random_spheres`](@ref).
 Mesh: the ligaments between particles of a chain have the width `gap`; refine the phase with
 `refine = gap / 2` (two elements across), keep `gap >= 0.1 r`.
 """
@@ -68,17 +73,28 @@ function particle_chains(cell::Cell{D}; axis=D, radius, gap, fraction=nothing, n
     vpart(r) = D == 3 ? 4π * r^2 * (aspect * r) / 3 : π * r * (aspect * r)
 
     # --- radii per chain
-    rmin_guess = radius isa Real ? Float64(radius) : radius isa AbstractVector ? minimum(radius) : nothing
+    (chain_gap === :auto || (chain_gap isa Real && chain_gap >= 0)) || throw(ArgumentError("$what: chain_gap must be :auto or a number >= 0"))
+    (face_gap === :auto || (face_gap isa Real && face_gap >= 0)) || throw(ArgumentError("$what: face_gap must be :auto or a number >= 0"))
+    (fraction === nothing || (fraction isa Real && 0 < fraction < 1)) || throw(ArgumentError("$what: fraction must be in (0, 1)"))
+    (radius isa Real || radius isa AbstractVector || !(radius isa Union{Nothing,Symbol,AbstractString})) ||
+        throw(ArgumentError("$what: radius must be a number, a vector (one per chain) or a function rng -> radius"))
+    if n_chains !== nothing
+        ok = n_chains isa Integer ? !(n_chains isa Bool) && n_chains >= 1 :
+             n_chains isa Tuple && D == 3 && arrangement !== :random && length(n_chains) == 2 &&
+             all(x -> x isa Integer && !(x isa Bool) && x >= 1, n_chains)
+        ok || throw(ArgumentError("$what: n_chains must be a positive integer (or (n1, n2) for a regular arrangement in 3D)"))
+    end
+    fit === :strict && !cell.periodic[axis] && throw(ArgumentError("$what: fit = :strict needs a periodic chain axis"))
     cg(r) = chain_gap === :auto ? max(gap, 0.1r) : Float64(chain_gap)
     fga(r) = face_gap === :auto ? cg(r) : Float64(face_gap)
     function layout(r)                         # particles per chain, pitch
         a = aspect * r
         p0 = 2a + gap
         if pera
-            m = floor(Int, La / p0 + 1e-12)
+            m = fit === :strict ? round(Int, La / p0) : floor(Int, La / p0 + 1e-12)
             m >= 1 || throw(ArgumentError("$what: one particle with its gap ($(round(p0; sigdigits=4))) does not fit along the axis"))
             fit === :strict && abs(La / p0 - round(La / p0)) > 1e-9 &&
-                throw(ArgumentError("$what: fit = :strict needs the cell length along the axis to be a multiple of 2r + gap = $p0"))
+                throw(ArgumentError("$what: fit = :strict needs the cell length along the axis to be a multiple of the pitch $p0"))
             return m, La / m
         else
             m = floor(Int, (La - 2fga(r) + gap) / p0 + 1e-12)
@@ -144,13 +160,13 @@ function particle_chains(cell::Cell{D}; axis=D, radius, gap, fraction=nothing, n
         else
             n1 = max(1, round(Int, sqrt(n * Lt[1] / Lt[2])))
             n2 = max(1, round(Int, n / n1))
-            n1 * n2 == n || @warn "$what: $n chains do not form a regular $(arrangement) arrangement; using $(n1)×$(n2) = $(n1 * n2)"
+            n1 * n2 == n || throw(ArgumentError("$what: $n chains do not form a regular $(arrangement) arrangement of this cross-section; use n_chains = ($n1, $n2) or another number"))
             (n1, n2)
         end
         hex = arrangement === :hex && D == 3
         for j in 1:(D == 3 ? nn[2] : 1), i in 1:nn[1]
             x1 = (i - 0.5 + (hex && iseven(j) ? 0.5 : 0.0)) * Lt[1] / nn[1]
-            push!(X, D == 3 ? (mod(x1, Lt[1]), (j - 0.5) * Lt[2] / nn[2]) : (x1,))
+            push!(X, D == 3 ? (pert[1] ? mod(x1, Lt[1]) : x1, (j - 0.5) * Lt[2] / nn[2]) : (x1,))
             push!(par, mod(i + j, 2))
         end
         rr = radii[1]
@@ -160,6 +176,21 @@ function particle_chains(cell::Cell{D}; axis=D, radius, gap, fraction=nothing, n
             ratio = (Lt[2] / nn[2]) / (Lt[1] / nn[1])
             abs(ratio - sqrt(3) / 2) > 0.01 * sqrt(3) / 2 &&
                 @warn "$what: the cross-section does not give a hexagonal arrangement (row spacing / chain spacing = $(round(ratio; digits=3)), hexagonal 0.866)"
+        end
+        D == 3 && hex && pert[2] && isodd(nn[2]) &&
+            @warn "$what: an odd number of rows along a periodic direction cannot be hexagonal (the first and last rows are neighbours)"
+        stagger === :alternate && any(k -> pert[k] && isodd(nn[k]), 1:D-1) &&
+            @warn "$what: stagger = :alternate with an odd number of chains along a periodic direction: some neighbours share the offset"
+        stagger === :alternate && !pera && @warn "$what: stagger = :alternate is ignored along a non-periodic chain axis"
+        # every chain inside the free faces; spacing to the others and to its own images
+        for xa in X, k in 1:D-1
+            pert[k] && continue
+            (xa[k] - rr * (1 + A) >= fga(rr) - 1e-12 && xa[k] + rr * (1 + A) <= Lt[k] - fga(rr) + 1e-12) ||
+                throw(ArgumentError("$what: a chain of the regular arrangement crosses a free face; use fewer chains or a periodic cell"))
+        end
+        for k in 1:D-1
+            pert[k] && Lt[k] < 2 * rr * (1 + A) + cg(rr) - 1e-12 &&
+                throw(ArgumentError("$what: a chain is closer than chain_gap to its own periodic image"))
         end
         # spacing check (minimum image)
         for a in eachindex(X), b in a+1:length(X)
@@ -175,6 +206,7 @@ function particle_chains(cell::Cell{D}; axis=D, radius, gap, fraction=nothing, n
     out_r = Float64[]
     base_alt = nothing
     gap_warned = false
+    band_warned = false
     for (c, (x, r)) in enumerate(zip(X, R))
         m, p = layout(r)
         a = aspect * r
@@ -183,67 +215,83 @@ function particle_chains(cell::Cell{D}; axis=D, radius, gap, fraction=nothing, n
             gap_warned = true
         end
         fa = fga(r)
-        # axial offset of the first centre
-        function z0_ok(z0)
-            pera || return true
-            s = min(mod(z0, p), p - mod(z0, p))
-            return _band_ok(s, a, fa) || s == 0
-        end
-        z0 = if pera
-            if stagger isa Real
-                stagger * p
-            elseif stagger === :alternate
-                if base_alt === nothing
-                    for _ in 1:max_tries
-                        b = rand(rng) * p
-                        z0_ok(b) && z0_ok(b + p / 2) && (base_alt = b; break)
-                    end
-                    base_alt === nothing && throw(ArgumentError("$what: no axial offset satisfies the face bands"))
-                end
-                base_alt + (par[c] == 1 ? p / 2 : 0.0)
-            else
-                z = nothing
-                for _ in 1:max_tries
-                    zz = rand(rng) * p
-                    z0_ok(zz) && (z = zz; break)
-                end
-                z === nothing && throw(ArgumentError("$what: no axial offset satisfies the face bands; reduce face_gap"))
-                z
+        # the axial band is narrower by default: a chain must fit its gap between two bands
+        fx = face_gap === :auto ? min(fa, a / 4) : fa
+        z0_ok(z0) = (s = min(mod(z0, p), p - mod(z0, p)); _band_ok(s, a, fx) || s == 0)
+        # every particle against the face, edge and corner bands (periodic directions)
+        function particle_ok(q)
+            sd = ntuple(d -> min(q[d], cell.size[d] - q[d]), D)
+            for d in 1:D
+                cell.periodic[d] || continue
+                rd, f = d == axis ? (a, fx) : (r, fa)
+                sd[d] < 1e-12 * cell.size[d] && continue          # a clean cut through the centre
+                (abs(sd[d] - rd) < f || sd[d] < f) && return false
             end
-        else
-            slack = La - 2fa - (m * 2a + (m - 1) * gap)
-            u = stagger isa Real ? stagger : stagger === :random ? rand(rng) : 0.5
-            fa + a + u * slack
+            aspect == 1 || return true
+            P = [d for d in 1:D if cell.periodic[d] && sd[d] >= 1e-12 * cell.size[d]]
+            f = min(fa, fx)
+            for i in eachindex(P), j in i+1:length(P)
+                abs(hypot(sd[P[i]], sd[P[j]]) - r) < f && return false
+            end
+            length(P) == 3 && abs(_norm(sd) - r) < f && return false
+            return true
         end
-        # waviness: smooth periodic lateral offset, max |w| <= A r
+        retry = pera ? stagger === :random || A > 0 : A > 0 || stagger === :random
         local pts
-        for attempt in 1:(A > 0 ? max_tries : 1)
+        found = false
+        for attempt in 1:(retry ? max_tries : 1)
+            z0 = if pera
+                if stagger isa Real
+                    stagger * p
+                elseif stagger === :alternate
+                    if base_alt === nothing
+                        for _ in 1:max_tries
+                            b = rand(rng) * p
+                            z0_ok(b) && z0_ok(b + p / 2) && (base_alt = b; break)
+                        end
+                        base_alt === nothing &&
+                            throw(ArgumentError("$what: no axial offset of the alternating chains satisfies the face bands; reduce face_gap or use stagger = 0.5"))
+                    end
+                    base_alt + (par[c] == 1 ? p / 2 : 0.0)
+                else
+                    z = nothing
+                    for _ in 1:max_tries
+                        zz = rand(rng) * p
+                        z0_ok(zz) && (z = zz; break)
+                    end
+                    z === nothing && throw(ArgumentError("$what: no axial offset satisfies the face bands; reduce face_gap"))
+                    z
+                end
+            else
+                slack = La - 2fa - (m * 2a + (m - 1) * gap)
+                u = stagger isa Real ? stagger : stagger === :random ? rand(rng) : 0.5
+                fa + a + u * slack
+            end
+            # waviness: smooth periodic lateral offset, max |w| <= A r
             dirs = [D == 3 ? (θ = 2π * rand(rng); (cos(θ), sin(θ))) : (rand(rng) < 0.5 ? (-1.0,) : (1.0,)) for _ in 1:modes]
             ph = [2π * rand(rng) for _ in 1:modes]
             cw = [rand(rng) for _ in 1:modes]; cw ./= sum(cw)
             w(z) = A == 0 ? ntuple(_ -> 0.0, D - 1) :
                    reduce((u, v) -> u .+ v, (A * r * cw[k] * cos(2π * k * z / La + ph[k]) .* dirs[k] for k in 1:modes))
             pts = NTuple{D,Float64}[]
-            ok = true
             for i in 0:m-1
                 z = z0 + i * p
                 pera && (z = mod(z, La))
                 xt = x .+ w(z)
                 xt = ntuple(k -> pert[k] ? mod(xt[k], Lt[k]) : xt[k], D - 1)
-                if A > 0
-                    for k in 1:D-1
-                        s = min(xt[k], Lt[k] - xt[k])
-                        _band_ok(s, r, fa) || (ok = false)
-                        !pert[k] && (s < r + fa) && (ok = false)
-                    end
-                end
-                q = ntuple(D) do d
-                    d == axis ? z : xt[findfirst(==(d), t)]
-                end
-                push!(pts, q)
+                push!(pts, ntuple(d -> d == axis ? z : xt[findfirst(==(d), t)], D))
             end
-            ok && break
-            attempt == max_tries && throw(ArgumentError("$what: could not place a wavy chain inside the face bands; reduce waviness"))
+            if all(particle_ok, pts)
+                found = true
+                break
+            end
+        end
+        if !found
+            retry && throw(ArgumentError("$what: could not place chain $c inside the face, edge and corner bands; " *
+                                         "reduce face_gap or waviness"))
+            band_warned || @warn "$what: some particles are nearly tangent to a face, edge or corner of the cell " *
+                                 "(stagger = $(repr(stagger))); expect poor elements there"
+            band_warned = true
         end
         sort!(pts; by=q -> q[axis])
         push!(out_chains, pts); push!(out_r, r)

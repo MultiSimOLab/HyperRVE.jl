@@ -41,7 +41,7 @@ can be read directly with GridapGmsh.
 using RVEs
 cell = Cell((1.0, 1.0, 1.0))
 
-particle_chains(cell; axis = 3, radius = 0.08, gap = 0.02, fraction = 0.12, rng = 1)   # MRE chains
+particle_chains(cell; axis = 3, radius = 0.08, gap = 0.04, fraction = 0.12, rng = 1)   # MRE chains
 lattice(cell, :octet; density = 0.15)                                                  # strut lattice
 grain_phases(voronoi(cell; n = 20, lloyd = 2, rng = 1))                                # polycrystal
 t = voronoi(cell; n = 8, rng = 1); pores(t; wall = wall_thickness(t, 0.15))            # closed foam
