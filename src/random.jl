@@ -1,7 +1,7 @@
 # Random packings of non-overlapping spheres, disks and aligned fibres (random sequential
 # addition with gaps to the faces, edges and corners of the cell).
 
-const _SAT = Dict(2 => 0.547, 3 => 0.384)          # RSA saturation of equal disks / spheres
+const _SAT = Dict(1 => 0.7476, 2 => 0.547, 3 => 0.384)   # RSA saturation of equal segments / disks / spheres
 
 _ballvol(::Val{3}, r) = 4π * r^3 / 3
 _ballvol(::Val{2}, r) = π * r^2
@@ -162,7 +162,7 @@ function _packing(::Val{D}, what, L, per, V, radius, fraction, n, min_gap, face_
         got = sum(_ballvol(Val(D), r) for r in radii[1:length(X)]; init=0.0) / V
         want = sum(_ballvol(Val(D), r) for r in radii) / V
         msg = @sprintf("%s: placed %d of %d inclusions (fraction %.3f of the requested %.3f) after %d attempts for the next one. Random sequential addition reaches about %.2f for equal %s with this min_gap; reduce fraction, min_gap or face_gap, or use a size distribution",
-                       what, length(X), length(radii), got, want, max_tries, 0.9 * _SAT[D] / (1 + gap / (2radii[end]))^D, what == "random_spheres" ? "spheres" : what == "random_fibres" ? "fibres" : "disks")
+                       what, length(X), length(radii), got, want, max_tries, 0.9 * _SAT[D] / (1 + gap / (2radii[end]))^D, what == "random_spheres" ? "spheres" : what == "random_fibres" ? "fibres" : what == "particle_chains" ? "chains" : "disks")
         strict ? error(msg) : @warn(msg)
     end
     return X, radii[1:length(X)]
@@ -256,6 +256,10 @@ function volume_fraction(items::AbstractVector{<:Geometry}, cell::Cell{D}) where
             v += 4π * it.radius^3 / 3
         elseif it isa Disk && D == 2
             v += π * it.radius^2
+        elseif it isa Ellipsoid && D == 3
+            v += 4π * prod(it.radii) / 3
+        elseif it isa Ellipse && D == 2
+            v += π * prod(it.radii)
         elseif it isa Fibre && D == 3
             a = findfirst(x -> abs(abs(x) - 1) < 1e-12, it.direction)
             a === nothing && throw(ArgumentError("volume_fraction: only fibres parallel to a cell axis are supported"))

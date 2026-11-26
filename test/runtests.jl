@@ -21,6 +21,7 @@ include("helpers.jl")
     @testset "Polyhedra and polygons" begin include("test_polyhedra.jl") end
     @testset "Voronoi tessellations" begin include("test_voronoi.jl") end
     @testset "Void phases and foams" begin include("test_foams.jl") end
+    @testset "Particle chains" begin include("test_chains.jl") end
     @testset "Session" begin include("test_session.jl") end
     @testset "Robustness" begin include("test_robustness.jl") end
     @testset "Aqua" begin Aqua.test_all(RVEs) end
