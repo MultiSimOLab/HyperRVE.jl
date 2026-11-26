@@ -1,6 +1,6 @@
 # Strut lattices: presets by relative density, a lattice embedded in a matrix, a custom
 # topology and a finite (non-periodic) block.
-using RVEs
+using HyperRVE
 
 cell = Cell((1.0, 1.0, 1.0))
 

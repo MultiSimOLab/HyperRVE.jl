@@ -1,5 +1,5 @@
 # Body-centred cubic arrangement of spheres in a periodic unit cell, with interface refinement.
-using RVEs
+using HyperRVE
 
 cell = Cell((1.0, 1.0, 1.0))
 r = 0.25

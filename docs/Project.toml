@@ -1,9 +1,9 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-RVEs = "1c830c4e-91c4-4b43-9943-9e359d57f5e1"
+HyperRVE = "1c830c4e-91c4-4b43-9943-9e359d57f5e1"
 
 [compat]
 Documenter = "1"
 
 [sources]
-RVEs = {path = ".."}
+HyperRVE = {path = ".."}

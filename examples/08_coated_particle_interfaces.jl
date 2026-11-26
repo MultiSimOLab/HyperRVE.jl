@@ -1,6 +1,6 @@
 # Coated particle: phases painted in order (the later phase wins where they overlap), and
 # interface physical groups for cohesive or jump conditions.
-using RVEs
+using HyperRVE
 
 c = (0.5, 0.5, 0.5)
 rve = RVE(Cell((1.0, 1.0, 1.0)), [Phase(:coating, Sphere(c, 0.3)), Phase(:core, Sphere(c, 0.25))])

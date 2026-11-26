@@ -1,4 +1,4 @@
-using RVEs: refpoint, characteristic_length, isunbounded, invariant_axis, _shift_range
+using HyperRVE: refpoint, characteristic_length, isunbounded, invariant_axis, _shift_range
 
 @testset "constructors and conversion" begin
     c = Cell([1, 2, 3])
@@ -29,7 +29,7 @@ using RVEs: refpoint, characteristic_length, isunbounded, invariant_axis, _shift
     @test p isa Phase{3} && length(p.items) == 3
     @test Phase(:q, s).name == "q"
     @test MeshOptions(h=0.1).h == 0.1
-    @test RVEs._with(MeshOptions(growth=1.5); h=0.2).growth == 1.5
+    @test HyperRVE._with(MeshOptions(growth=1.5); h=0.2).growth == 1.5
     sp = Sphere((0, 0, 0), 1)
     @test Phase(:p, sp; refine=0.02).refine.h == InterfaceRefinement(h=0.02).h == InterfaceRefinement(0.02).h
     @test Phase(:p, sp; refine=(h=0.02, growth=1.2)).refine.growth == 1.2

@@ -16,7 +16,7 @@ end
     @test Capsule(center=(0, 0, 0), direction=(0, 0, 2), length=1, radius=0.1) == Capsule((0, 0, -0.5), (0, 0, 0.5), 0.1)
     @test_throws ArgumentError Capsule((0, 0, 0), (0, 0, 0), 0.1)
     @test_throws ArgumentError Capsule((0, 0, 0), (0, 0, 1), -0.1)
-    @test RVEs.refpoint(Capsule((0, 0, 0), (0, 0, 1), 0.1)) == (0.0, 0.0, 0.5)
+    @test HyperRVE.refpoint(Capsule((0, 0, 0), (0, 0, 1), 0.1)) == (0.0, 0.0, 0.5)
     for (p, q) in (((0.3, 0.5, 0.5), (0.7, 0.5, 0.5)), ((0.3, 0.3, 0.3), (0.7, 0.6, 0.5)), ((0.5, 0.5, 0.7), (0.5, 0.5, 0.3)))
         L = sqrt(sum(abs2, q .- p))
         generate(RVE(unitcell(), Phase(:c, Capsule(p, q, 0.1))); geometry_only=true) do res
@@ -105,8 +105,8 @@ end
     # exact duplicate placements are dropped before the fuse (also with -0.0 coordinates)
     dup = [Sphere((0.5, 0.5, 0.5), 0.2), Sphere((0.5, 0.5, 0.5), 0.2), Cylinder((0.2, 0.5, 0.5), (0.6, 0.0, 0.0), 0.05),
            Cylinder((0.8, 0.5, 0.5), (-0.6, -0.0, 0.0), 0.05)]
-    @test RVEs._placement_key(dup[3], (0.0, 0.0, 0.0)) == RVEs._placement_key(dup[4], (0.0, 0.0, 0.0))
-    @test RVEs._placement_key(Sphere((-0.0, 0.5, 0.5), 0.1), (0.0, 0.0, 0.0)) == RVEs._placement_key(Sphere((0.0, 0.5, 0.5), 0.1), (0.0, 0.0, 0.0))
+    @test HyperRVE._placement_key(dup[3], (0.0, 0.0, 0.0)) == HyperRVE._placement_key(dup[4], (0.0, 0.0, 0.0))
+    @test HyperRVE._placement_key(Sphere((-0.0, 0.5, 0.5), 0.1), (0.0, 0.0, 0.0)) == HyperRVE._placement_key(Sphere((0.0, 0.5, 0.5), 0.1), (0.0, 0.0, 0.0))
     single = geo(RVE(unitcell(), Phase(:p, dup[[1, 3]]; fuse=true)))
     both = geo(RVE(unitcell(), Phase(:p, dup; fuse=true)))
     @test volume(both, :p) ≈ volume(single, :p) rtol = 1e-9

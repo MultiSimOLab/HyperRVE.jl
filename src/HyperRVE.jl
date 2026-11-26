@@ -1,5 +1,5 @@
 """
-    RVEs
+    HyperRVE
 
 Periodic representative volume element (RVE) meshes with the Gmsh Julia API.
 
@@ -8,7 +8,7 @@ primitives, booleans and transforms, wrap everything in an [`RVE`](@ref) and cal
 [`generate`](@ref). Periodic images of inclusions crossing the cell boundary, phase
 assignment, physical groups and periodic meshing are handled automatically.
 """
-module RVEs
+module HyperRVE
 
 using Gmsh: Gmsh, gmsh
 using Printf: @sprintf

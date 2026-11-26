@@ -1,18 +1,18 @@
-# RVEs.jl
+# HyperRVE.jl
 
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://multisimolab.github.io/RVEs.jl/stable/)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://multisimolab.github.io/RVEs.jl/dev/)
-[![Build Status](https://github.com/MultiSimOLab/RVEs.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/MultiSimOLab/RVEs.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://multisimolab.github.io/HyperRVE.jl/stable/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://multisimolab.github.io/HyperRVE.jl/dev/)
+[![Build Status](https://github.com/MultiSimOLab/HyperRVE.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/MultiSimOLab/HyperRVE.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
 # Periodic RVE meshes with Gmsh
 
-RVEs.jl generates periodic meshes of representative volume elements (RVEs) for
+HyperRVE.jl generates periodic meshes of representative volume elements (RVEs) for
 computational homogenisation, using the Gmsh Julia API and its OpenCASCADE kernel.
 A cell of any size and origin is filled with named phases built from primitives (spheres,
 ellipsoids, boxes, cylinders, capsules, fibres, polyhedra), boolean operations and transforms,
 or from generators: strut lattices, random packings, particle chains, Voronoi polycrystals and
-foams. RVEs.jl creates
+foams. HyperRVE.jl creates
 the periodic images of every inclusion that crosses the cell boundary, assigns each piece to
 its phase, defines physical groups for phases, faces, edges and corners, imposes periodic
 meshing on opposite faces and checks it node by node. The meshes are written in MSH 4.1 and
@@ -38,7 +38,7 @@ can be read directly with GridapGmsh.
 </table>
 
 ```julia
-using RVEs
+using HyperRVE
 cell = Cell((1.0, 1.0, 1.0))
 
 particle_chains(cell; axis = 3, radius = 0.08, gap = 0.04, fraction = 0.12, rng = 1)   # MRE chains
@@ -59,7 +59,7 @@ packings, Voronoi polycrystals, foams, particle chains); run them all with
 # Quick start
 
 ```julia
-using RVEs
+using HyperRVE
 
 cell = Cell((1.0, 1.0, 1.0))                     # periodic unit cube (any size and origin work)
 
@@ -74,7 +74,7 @@ volume_fraction(res, :particles)                 # 2 · 4π/3 · 0.25³ ≈ 0.13
 Inclusions built with boolean operations and fibres crossing the whole cell:
 
 ```julia
-using RVEs
+using HyperRVE
 
 cell  = Cell((1.0, 1.0, 1.0))
 c     = cellpoint(cell, (0.5, 0.5, 0.5))         # fractional -> physical coordinates
@@ -128,7 +128,7 @@ In 2D the sides `xmin`, `xmax`, `ymin`, `ymax` are curves and points, the corner
 that identify periodic nodes (GridapGmsh) merge the labels of opposite faces: use `corners`
 and the phase names there (the interface groups are not affected).
 
-Version 0.2 is a complete rewrite; see `docs/src/migration.md` to port scripts written for the
+HyperRVE 0.1 (formerly `RVEs.jl`) is a complete rewrite; see `docs/src/migration.md` to port scripts written for the
 2024 API.
 
 # Project funded by:
@@ -138,5 +138,5 @@ Version 0.2 is a complete rewrite; see `docs/src/migration.md` to port scripts w
  <p align="center"> 
 &nbsp; &nbsp; &nbsp; &nbsp;
 <img alt="Dark"
-src="https://github.com/MultiSimOLab/RVEs.jl/blob/main/docs/imgs/aei.png" width="60%">
+src="https://github.com/MultiSimOLab/HyperRVE.jl/blob/main/docs/imgs/aei.png" width="60%">
 </p>

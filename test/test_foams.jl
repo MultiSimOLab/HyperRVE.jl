@@ -38,7 +38,7 @@ end
     # closed cells: exact density, empty pores, periodic
     w = wall_thickness(t, 0.15)
     p = pores(t; wall=w)
-    @test 1 - sum(abs(RVEs._polyhedron_volume(x.vertices, x.faces)) for x in p) ≈ 0.15 atol = 1e-9
+    @test 1 - sum(abs(HyperRVE._polyhedron_volume(x.vertices, x.faces)) for x in p) ≈ 0.15 atol = 1e-9
     res = generate(RVE(c, Phase(:pores, p; void=true); matrix=:walls); h=w)
     @test res.phases[1].fraction ≈ 0.15 atol = 1e-8
     @test all(x -> x.ok && x.npairs > 0, res.periodicity)
@@ -82,7 +82,7 @@ end
     # nearly vanished pores are skipped, not an error
     tc = voronoi(unitcell(); seeds=[(x, y, z) for x in (0.25, 0.75) for y in (0.25, 0.75) for z in (0.25, 0.75)])
     @test length(pores(tc; wall=0.5 - 1e-9)) == 0
-    @test all(p -> all(isapprox.(abs(RVEs._polyhedron_volume(p.vertices, p.faces)), 0.4^3)), pores(tc; wall=0.1))
+    @test all(p -> all(isapprox.(abs(HyperRVE._polyhedron_volume(p.vertices, p.faces)), 0.4^3)), pores(tc; wall=0.1))
     # interfaces keyword validated before meshing; interface_tag with :union
     @test_throws ArgumentError generate(RVE(unitcell(), Phase(:s, Sphere((0.5, 0.5, 0.5), 0.2))); geometry_only=true, interfaces=1)
     r = generate(RVE(unitcell(), Phase(:s, Sphere((0.5, 0.5, 0.5), 0.2))); geometry_only=true, interfaces=:union)

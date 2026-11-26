@@ -1,6 +1,6 @@
 # Periodic Voronoi polycrystals: one phase per grain (grain boundaries as interface groups),
 # grain groups as two phases, and a 2D tessellation.
-using RVEs
+using HyperRVE
 
 cell = Cell((1.0, 1.0, 1.0))
 t = voronoi(cell; n = 20, lloyd = 2, rng = 1)          # 20 grains, two Lloyd iterations

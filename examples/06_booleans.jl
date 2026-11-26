@@ -1,5 +1,5 @@
 # Inclusion built with boolean operations: a sphere clipped by a box, with a cross of fibres removed.
-using RVEs
+using HyperRVE
 
 cell = Cell((1.0, 1.0, 1.0))
 c = cellpoint(cell, (0.5, 0.5, 0.5))

@@ -110,7 +110,7 @@ struct _ConstRadius end
     s = random_spheres(c; radius=0.1, fraction=0.2, boundary=:inside, face_gap=0, min_gap=0.02, rng=3)
     @test min_image_gap(s, c) >= 0.02 - 1e-12
     # integer seed and Xoshiro(seed) give the same packing; edge band
-    @test random_spheres(c; radius=0.08, n=10, rng=3) == random_spheres(c; radius=0.08, n=10, rng=RVEs.Random.Xoshiro(3))
+    @test random_spheres(c; radius=0.08, n=10, rng=3) == random_spheres(c; radius=0.08, n=10, rng=HyperRVE.Random.Xoshiro(3))
     for x in random_spheres(c; radius=0.1, fraction=0.2, rng=5)
         t = min.(x.center, 1 .- x.center)
         @test all(abs(hypot(t[a], t[b]) - 0.1) >= 0.01 - 1e-12 for (a, b) in ((1, 2), (1, 3), (2, 3)))

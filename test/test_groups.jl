@@ -27,7 +27,7 @@ corners = ["corner_x$(i)_y$(j)_z$(k)" for k in ("min", "max") for j in ("min", "
         end
         # the CAD model is built in a normalised frame (origin at the cell corner, longest
         # edge = 1): map back with the frame
-        fr = RVEs.Frame(rve)
+        fr = HyperRVE.Frame(rve)
         s = fr.scale
         # the corner xmax_ymin_zmin is at (3, 1, 1)
         p = g("corner_xmax_ymin_zmin", 0).entities[1]

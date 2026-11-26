@@ -1,5 +1,5 @@
 # Closed-cell and open-cell foams from a Voronoi tessellation, and void phases.
-using RVEs
+using HyperRVE
 
 cell = Cell((1.0, 1.0, 1.0))
 t = voronoi(cell; n = 8, lloyd = 2, rng = 1)

@@ -13,16 +13,16 @@ end
 
 @testset "validation and traits" begin
     p = cube((0.5, 0.5, 0.5), 0.4)
-    @test all(RVEs.refpoint(p) .≈ (0.5, 0.5, 0.5))
-    @test RVEs.characteristic_length(p) ≈ 0.2
+    @test all(HyperRVE.refpoint(p) .≈ (0.5, 0.5, 0.5))
+    @test HyperRVE.characteristic_length(p) ≈ 0.2
     k = Polyhedron(; vertices=p.vertices, faces=p.faces)
     @test k.vertices == p.vertices && k.faces == p.faces
     # faces given with mixed orientations: same volume and centroid
     q = Polyhedron(p.vertices, [i == 2 ? reverse(f) : f for (i, f) in enumerate(p.faces)])
-    @test abs(RVEs._polyhedron_volume(q.vertices, q.faces)) ≈ 0.064
+    @test abs(HyperRVE._polyhedron_volume(q.vertices, q.faces)) ≈ 0.064
     # non-convex L-shaped prism
     L = prism([(0.2, 0.2), (0.8, 0.2), (0.8, 0.4), (0.4, 0.4), (0.4, 0.8), (0.2, 0.8)], 0.3, 0.7)
-    @test abs(RVEs._polyhedron_volume(L.vertices, L.faces)) ≈ (0.6 * 0.2 + 0.2 * 0.4) * 0.4
+    @test abs(HyperRVE._polyhedron_volume(L.vertices, L.faces)) ≈ (0.6 * 0.2 + 0.2 * 0.4) * 0.4
     tet = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)]
     @test_throws ArgumentError Polyhedron(tet, [[1, 2, 3], [1, 2, 4], [2, 3, 4]])                 # too few faces
     @test_throws ArgumentError Polyhedron([tet; (1, 1, 1)], [[1, 2, 3], [1, 2, 4], [2, 3, 4], [1, 3, 5]])  # open
@@ -35,14 +35,14 @@ end
     @test_throws ArgumentError Polygon([(0, 0), (1, 0), (2, 0)])                                    # zero area
     @test_throws ArgumentError Polygon([(0, 0), (1, 0), (1, 0), (0, 1)])                             # repeated vertex
     g = Polygon([(0.0, 0.0), (2.0, 0.0), (2.0, 1.0), (0.0, 1.0)])
-    @test all(RVEs.refpoint(g) .≈ (1.0, 0.5)) && RVEs.characteristic_length(g) ≈ 2 * 2 / 6
+    @test all(HyperRVE.refpoint(g) .≈ (1.0, 0.5)) && HyperRVE.characteristic_length(g) ≈ 2 * 2 / 6
     # traits are translation invariant (no cancellation far from the origin)
     for (s, o) in ((1e-3, (1e3, 1e3, 1e3)), (1e-6, (1.0, 2.0, 3.0)), (1.0, (1e5, 1e5, 1e5)))
         c = cube(o .+ s .* (0.5, 0.5, 0.5), 0.3s)
-        @test all(abs.(RVEs.refpoint(c) .- (o .+ s .* (0.5, 0.5, 0.5))) .<= 1e-9s)
-        @test RVEs.characteristic_length(c) ≈ 0.15s rtol = 1e-6
+        @test all(abs.(HyperRVE.refpoint(c) .- (o .+ s .* (0.5, 0.5, 0.5))) .<= 1e-9s)
+        @test HyperRVE.characteristic_length(c) ≈ 0.15s rtol = 1e-6
         sq = Polygon([o[1:2] .+ s .* x for x in ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))])
-        @test all(abs.(RVEs.refpoint(sq) .- (o[1:2] .+ s .* (0.5, 0.5))) .<= 1e-9s)
+        @test all(abs.(HyperRVE.refpoint(sq) .- (o[1:2] .+ s .* (0.5, 0.5))) .<= 1e-9s)
     end
     # unused or coincident vertices, malformed faces
     @test_throws ArgumentError Polyhedron([p.vertices; (0.9, 0.9, 0.9)], p.faces)
