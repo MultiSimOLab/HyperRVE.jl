@@ -10,21 +10,51 @@
 RVEs.jl generates periodic meshes of representative volume elements (RVEs) for
 computational homogenisation, using the Gmsh Julia API and its OpenCASCADE kernel.
 A cell of any size and origin is filled with named phases built from primitives (spheres,
-ellipsoids, boxes, cylinders, fibres), boolean operations and transforms. RVEs.jl creates
+ellipsoids, boxes, cylinders, capsules, fibres, polyhedra), boolean operations and transforms,
+or from generators: strut lattices, random packings, particle chains, Voronoi polycrystals and
+foams. RVEs.jl creates
 the periodic images of every inclusion that crosses the cell boundary, assigns each piece to
 its phase, defines physical groups for phases, faces, edges and corners, imposes periodic
 meshing on opposite faces and checks it node by node. The meshes are written in MSH 4.1 and
 can be read directly with GridapGmsh.
 
+# Gallery
+
+<table>
+<tr>
+<td align="center"><img src="docs/imgs/gallery/mre_chains.png" width="180"><br>particle chains (MRE)</td>
+<td align="center"><img src="docs/imgs/gallery/octet.png" width="180"><br>octet lattice</td>
+<td align="center"><img src="docs/imgs/gallery/polycrystal.png" width="180"><br>Voronoi polycrystal</td>
+<td align="center"><img src="docs/imgs/gallery/closed_foam.png" width="180"><br>closed-cell foam</td>
+<td align="center"><img src="docs/imgs/gallery/kelvin.png" width="180"><br>Kelvin open foam</td>
+</tr>
+<tr>
+<td align="center"><img src="docs/imgs/gallery/random.png" width="180"><br>random spheres</td>
+<td align="center"><img src="docs/imgs/gallery/fibres.png" width="180"><br>random fibres</td>
+<td align="center"><img src="docs/imgs/gallery/bcc.png" width="180"><br>BCC spheres</td>
+<td align="center"><img src="docs/imgs/gallery/mre_chains_2d.png" width="180"><br>2D chains</td>
+<td align="center"><img src="docs/imgs/gallery/disks2d.png" width="180"><br>2D disks, two sizes</td>
+</tr>
+</table>
+
+```julia
+using RVEs
+cell = Cell((1.0, 1.0, 1.0))
+
+particle_chains(cell; axis = 3, radius = 0.08, gap = 0.02, fraction = 0.12, rng = 1)   # MRE chains
+lattice(cell, :octet; density = 0.15)                                                  # strut lattice
+grain_phases(voronoi(cell; n = 20, lloyd = 2, rng = 1))                                # polycrystal
+t = voronoi(cell; n = 8, rng = 1); pores(t; wall = wall_thickness(t, 0.15))            # closed foam
+foam_struts(voronoi(cell; seeds = [(0, 0, 0), (0.5, 0.5, 0.5)]); radius = 0.04)        # Kelvin foam
+random_spheres(cell; radius = 0.1, fraction = 0.2, rng = 3)                            # random packing
+```
+
 # Examples
 
 The folder [`examples/`](examples) has one script per capability (spheres, fibres, cells of
-any size, supercells, 2D, booleans, mesh control, interfaces, porous media); run them all with
+any size, supercells, 2D, booleans, mesh control, interfaces, porous media, lattices, random
+packings, Voronoi polycrystals, foams, particle chains); run them all with
 `julia --project=. examples/run_all.jl`.
-
- <p align="center">
-<img alt="RVE examples" src="https://github.com/MultiSimOLab/RVEs.jl/blob/main/docs/imgs/rves.png" width="100%">
-</p>
 
 # Quick start
 
@@ -91,14 +121,14 @@ groups
 | `corners`, `boundary` | 0 / 2, 1, 0 | the 8 corners (7), the whole cell surface (8) |
 | `edge_ymin_zmin`, ... | 1, 0 | the 12 cell edges |
 | `corner_xmin_ymin_zmin`, ... | 0 | each corner |
-| `interface_<a>_<b>`, `interfaces` | 2, 1, 0 | interfaces between phases `a` and `b` (`void` without matrix), and their union |
+| `interface_<a>_<b>`, `interfaces` | 2, 1, 0 | interfaces between phases `a` and `b` (`void`: free surfaces, without matrix or next to a void phase), and their union |
 
 In 2D the sides `xmin`, `xmax`, `ymin`, `ymax` are curves and points, the corners are
 `corner_xmin_ymin`, ... and there are no `edge_*` groups. In periodic directions, readers
 that identify periodic nodes (GridapGmsh) merge the labels of opposite faces: use `corners`
 and the phase names there (the interface groups are not affected).
 
-version 0.2 is a complete rewrite; see `docs/src/migration.md` to port scripts written for the
+Version 0.2 is a complete rewrite; see `docs/src/migration.md` to port scripts written for the
 2024 API.
 
 # Project funded by:
