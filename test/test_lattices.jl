@@ -1,7 +1,5 @@
 # Strut lattices: topology of the presets, struts(), densities, meshing.
 
-using RVEs: lattice_topology
-
 @testset "preset topologies (S1)" begin
     table = Dict(:cubic => (1, 3, 6), :bcc => (2, 8, 8), :fcc => (4, 12, nothing), :octet => (4, 24, 12),
                  :kelvin => (12, 24, 4), :diamond => (8, 16, 4))
@@ -77,4 +75,47 @@ end
     blk = generate(RVE(Cell((1.0, 1.0, 1.0); periodic=false), Phase(:lat, lattice(Cell((1.0, 1.0, 1.0); periodic=false), :bcc; radius=0.08); fuse=true);
                        matrix=nothing, tiling=(2, 1, 1)); h=0.1)
     @test length(blk[:lat].entities) == 1 && isempty(blk.periodicity)
+end
+
+@testset "offsets, faces, warnings and errors (review)" begin
+    c = Cell((2.0, 1.0, 1.5); origin=(0.3, -0.2, 0.1))
+    # axes are (ξj + o − ξi) .* size, also for nodes outside [0, 1)
+    its = struts(c, [(1.0, 1.0, 1.0), (0.5, 0.25, 2.5)], [(2, 1, (1, 0, -1))]; radius=0.05, node_radius=nothing)
+    @test only(its).axis == ((1.0, 1.0, 1.0) .+ (1, 0, -1) .- (0.5, 0.25, 2.5)) .* (2.0, 1.0, 1.5)
+    # reversed strut with negated offset, and self-struts ±o, are duplicates
+    @test_throws ArgumentError struts(unitcell(), [(0.1, 0.1, 0.1), (0.5, 0.5, 0.5)], [(1, 2, (1, 0, 0)), (2, 1, (-1, 0, 0))]; radius=0.05)
+    @test_throws ArgumentError struts(unitcell(), [(0.1, 0.1, 0.1)], [(1, 1, (0, 0, 1)), (1, 1, (0, 0, -1))]; radius=0.05)
+    @test length(struts(unitcell(), [(0.1, 0.1, 0.1), (0.5, 0.5, 0.5)], [(1, 2, (1, 0, 0)), (2, 1, (1, 0, 0))]; radius=0.05)) == 4
+    # malformed input is an ArgumentError
+    for e in ((1, 2, (1, 0)), (1, 2, 3), (1.5, 2), (1, 2, (0.5, 0, 0)))
+        @test_throws ArgumentError struts(unitcell(), [(0.1, 0.1, 0.1), (0.5, 0.5, 0.5)], [e]; radius=0.05)
+    end
+    @test_throws ArgumentError struts(unitcell(), [(0.1, 0.1, 0.1), (0.5, 0.5, 0.5)], [(1, 2)]; radius=nothing)
+    @test_throws ArgumentError struts(unitcell(), [(0.1, 0.1, 0.1), (0.5, 0.5, 0.5)], [(1, 2)]; radius=0.05, node_radius=:foo)
+    # a strut crossing a non-periodic face appears at both faces (mixed periodicity)
+    cm = Cell((1.0, 1.0, 1.0); periodic=(false, false, true))
+    its = struts(cm, [(0.9, 0.0, 0.5), (0.1, 0.0, 0.5)], [(1, 2, (1, 0, 0))]; radius=0.03)
+    @test count(x -> x isa Cylinder, its) == 4 && count(x -> x isa Sphere, its) == 4
+    # warnings in physical units; no spurious "longer than the cell" for cubic struts
+    @test_logs lattice(Cell((10.0, 10.0, 10.0)), :cubic; radius=0.6)
+    @test_logs (:warn, r"shorter than their diameter") lattice(Cell((0.1, 0.1, 0.1)), :kelvin; radius=0.03)
+    co = Cell((0.3, 0.3, 0.3); origin=(0.1, 0.1, 0.1))
+    @test_logs RVE(co, Phase(:lat, lattice(co, :cubic; radius=0.015); fuse=true); matrix=nothing)
+    # densities: exact cubic formula, fcc valences, inversion up to the range limit
+    @test relative_density(:cubic, 0.1) ≈ 3π * 0.01 - 8sqrt(2) * 0.001
+    deg = zeros(Int, 4)
+    for (i, j, _) in lattice_topology(:fcc).edges
+        deg[i] += 1; deg[j] += 1
+    end
+    @test sort(deg) == [4, 4, 4, 12]                    # corner to the 12 face centres
+    for k in (:cubic, :bcc, :fcc, :octet, :kelvin, :diamond)
+        xm = RVEs._DENSITY[k][3]
+        @test relative_density(k, strut_radius(k, relative_density(k, xm))) ≈ relative_density(k, xm)
+    end
+    @test_throws ArgumentError lattice(unitcell(), :bcc; radius=0.05, density=0.1)
+    @test_throws ArgumentError lattice(unitcell(), :bcc; density=0.9)
+    # non-periodic cell: same volume fraction as the periodic lattice (complete finite truss)
+    blk = Cell((1.0, 1.0, 1.0); periodic=false)
+    v = volume_fraction(geo(RVE(blk, Phase(:l, lattice(blk, :cubic; radius=0.08); fuse=true); matrix=nothing)), :l)
+    @test v ≈ relative_density(:cubic, 0.08) rtol = 1e-6
 end

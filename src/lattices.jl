@@ -59,8 +59,9 @@ Items of a strut lattice: one [`Cylinder`](@ref) per strut and one [`Sphere`](@r
 - `radius`: one number or one per strut. `node_radius`: `:auto` (largest radius of the struts
   meeting at the node), a number, one per node, or `nothing` (no node spheres).
 
-Along non-periodic directions every translate of a strut or node lying in the closed cell is
-emitted, so the lattice is the complete finite truss. Use the items in a fused phase:
+Along non-periodic directions every translate of a strut or node that overlaps the closed
+cell is emitted (a strut crossing a face appears at both faces, cut by them), so the lattice
+is the complete finite truss. Use the items in a fused phase:
 `Phase(:lattice, struts(...); fuse = true)`.
 """
 function struts(cell::Cell{3}, nodes, edges; radius, node_radius=:auto)
@@ -74,7 +75,10 @@ function struts(cell::Cell{3}, nodes, edges; radius, node_radius=:auto)
     end
     E = Tuple{Int,Int,NTuple{3,Int}}[]
     for e in edges
-        (length(e) in (2, 3)) || throw(ArgumentError("struts: an edge is (i, j) or (i, j, (o1, o2, o3)), got $e"))
+        bad() = ArgumentError("struts: an edge is (i, j) or (i, j, (o1, o2, o3)) with integers, got $e")
+        (length(e) in (2, 3)) || throw(bad())
+        all(x -> x isa Integer, (e[1], e[2])) || throw(bad())
+        length(e) == 3 && !(length(e[3]) == 3 && all(x -> x isa Integer, e[3])) && throw(bad())
         i, j = Int(e[1]), Int(e[2])
         o = length(e) == 3 ? ntuple(k -> Int(e[3][k]), 3) : (0, 0, 0)
         (1 <= i <= length(ξ) && 1 <= j <= length(ξ)) || throw(ArgumentError("struts: edge $e refers to a missing node"))
@@ -90,6 +94,7 @@ function struts(cell::Cell{3}, nodes, edges; radius, node_radius=:auto)
         c in seen && throw(ArgumentError("struts: strut $(e) listed twice"))
         push!(seen, c)
     end
+    radius isa Union{Real,AbstractVector} || throw(ArgumentError("struts: radius must be a number or one per strut"))
     r = radius isa Real ? fill(_positive(radius, "struts radius"), length(E)) :
         (length(radius) == length(E) ? [_positive(x, "struts radius") for x in radius] :
          throw(ArgumentError("struts: radius must be a number or one per strut ($(length(E)))")))
@@ -105,7 +110,7 @@ function struts(cell::Cell{3}, nodes, edges; radius, node_radius=:auto)
         v
     elseif node_radius isa Real
         fill(_positive(node_radius, "struts node_radius"), length(ξ))
-    elseif length(node_radius) == length(ξ)
+    elseif node_radius isa AbstractVector && length(node_radius) == length(ξ)
         [_positive(x, "struts node_radius") for x in node_radius]
     else
         throw(ArgumentError("struts: node_radius must be :auto, nothing, a number or one per node"))
@@ -115,26 +120,32 @@ function struts(cell::Cell{3}, nodes, edges; radius, node_radius=:auto)
         used[i] = used[j] = true
     end
     any(.!used) && @warn "struts: nodes $(findall(.!used)) have no struts and get no sphere"
-    # translates along non-periodic directions (complete finite truss)
+    # translates along non-periodic directions (complete finite truss): along each such
+    # direction, every translate whose extent overlaps the closed cell (or, for a strut parallel
+    # to the faces, lies in it)
     per = cell.periodic
-    inside(p) = all(d -> per[d] || (-_LTOL <= p[d] <= 1 + _LTOL), 1:3)
-    svals = [per[d] ? (0,) : (-1, 0, 1) for d in 1:3]
-    function placements(a, b)
-        out = NTuple{3,Int}[]
-        for s in Iterators.product(svals...)
-            inside(a .+ s) && inside(b .+ s) && push!(out, s)
+    function shifts(a, b, d)
+        per[d] && return (0,)
+        out = Int[]
+        for s in -1:1
+            lo, hi = minmax(a[d] + s, b[d] + s)
+            ok = hi - lo < _LTOL ? (-_LTOL <= lo <= 1 + _LTOL) : (min(hi, 1.0) - max(lo, 0.0) > _LTOL)
+            ok && push!(out, s)
         end
-        return isempty(out) ? [(0, 0, 0)] : out
+        return isempty(out) ? (0,) : Tuple(out)
     end
+    placements(a, b) = vec(collect(Iterators.product(ntuple(d -> shifts(a, b, d), 3)...)))
     items = Geometry{3}[]
+    short = Int[]
     for (k, (i, j, o)) in enumerate(E)
         a, b = ξ[i], ξ[j] .+ o
-        _norm(b .- a) <= 2 * r[k] && @warn "struts: strut $k is shorter than its diameter"
+        axis = (b .- a) .* cell.size                   # not q - p: exact lengths for the periodicity checks
+        _norm(axis) <= 2 * r[k] && push!(short, k)
         for s in placements(a, b)
-            p, q = cellpoint(cell, a .+ s), cellpoint(cell, b .+ s)
-            push!(items, Cylinder(p, q .- p, r[k]))
+            push!(items, Cylinder(cellpoint(cell, a .+ s), axis, r[k]))
         end
     end
+    isempty(short) || @warn "struts: struts $short are shorter than their diameter"
     if rn !== nothing
         for i in eachindex(ξ)
             used[i] || continue
@@ -150,7 +161,7 @@ end
 # exact while the overlaps of different nodes do not touch (valid up to xmax); c2 fitted to
 # OpenCASCADE volumes of the fused lattices (relative error below 5e-5).
 const _DENSITY = Dict(:cubic => (3π, 8sqrt(2), 0.30), :bcc => (4sqrt(3) * π, 39.1918, 0.18),
-                      :diamond => (4sqrt(3) * π, 39.192, 0.14), :kelvin => (6sqrt(2) * π, 60.334, 0.14),
+                      :diamond => (4sqrt(3) * π, 39.192, 0.14), :kelvin => (6sqrt(2) * π, 60.338, 0.14),
                       :fcc => (6sqrt(2) * π, 54.6275, 0.14), :octet => (12sqrt(2) * π, 154.510, 0.14))
 
 """
@@ -160,13 +171,14 @@ const _DENSITY = Dict(:cubic => (3π, 8sqrt(2), 0.30), :bcc => (4sqrt(3) * π, 3
 Volume fraction of a strut lattice with node spheres of the strut radius. For the presets the
 formula `c1 x² − c2 x³` is exact up to the radius where the overlaps of different nodes meet
 (checked against OpenCASCADE volumes). For other lattices the first-order estimate
-`Σ π r² L / V` overestimates by 10–20 % at practical radii: measure the exact value with
+`Σ π r² L / V` overestimates by 10–20 % at practical radii (in non-periodic cells it counts
+whole struts, also those the faces cut, and overestimates much more): measure the exact value with
 `volume_fraction(generate(rve; geometry_only = true), :lattice)`.
 """
 function relative_density(kind::Symbol, x::Real)
     haskey(_DENSITY, kind) || throw(ArgumentError("unknown lattice $(repr(kind))"))
     c1, c2, xmax = _DENSITY[kind]
-    0 < x <= xmax || throw(ArgumentError("relative_density(:$kind, x) is exact for 0 < x <= $xmax; " *
+    0 < x <= xmax * (1 + 1e-12) || throw(ArgumentError("relative_density(:$kind, x) is exact for 0 < x <= $xmax; " *
                                          "measure larger radii with generate(...; geometry_only = true)"))
     return c1 * x^2 - c2 * x^3
 end
@@ -193,14 +205,16 @@ function strut_radius(kind::Symbol, ρ::Real)
         x -= f / (2c1 * x - 3c2 * x^2)
         abs(f) < 1e-15 && break
     end
-    return x
+    return min(x, xmax)
 end
 
 """
     lattice(cell, kind; radius = nothing, density = nothing, node_radius = :auto)
 
 Items of a preset strut lattice (see [`lattice_topology`](@ref)) scaled to the cell, with
-either the strut `radius` or the relative `density` (cubic cells only). Use them in a fused
+either the strut `radius` (a number or one per strut, in the order of `lattice_topology(kind).edges`)
+or the relative `density` (cubic cells only; exact with the default `node_radius`, ranges up to
+`relative_density(kind, xmax)`, see [`relative_density`](@ref)). Use them in a fused
 phase: `Phase(:lattice, lattice(cell, :octet; density = 0.2); fuse = true)`.
 """
 function lattice(cell::Cell{3}, kind::Symbol; radius=nothing, density=nothing, node_radius=:auto)
