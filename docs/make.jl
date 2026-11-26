@@ -12,7 +12,8 @@ makedocs(;
         edit_link="main",
         assets=String[],
     ),
-    pages=["Home" => "index.md", "Migration from v1" => "migration.md"],
+    pages=["Home" => "index.md", "User guide" => "guide.md", "Examples" => "examples.md",
+           "Migration from v1" => "migration.md"],
     warnonly=[:missing_docs],
 )
 
