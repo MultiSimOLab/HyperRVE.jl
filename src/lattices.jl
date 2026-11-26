@@ -196,7 +196,8 @@ formula `c1 x² − c2 x³` is exact up to the radius where the overlaps of diff
 whole struts, also those the faces cut, and overestimates much more): measure the exact value with
 `volume_fraction(generate(rve; geometry_only = true), :lattice)`.
 """
-function relative_density(kind::Symbol, x::Real)
+function relative_density(kind::Symbol, x::Real; wall=nothing, node::Symbol=:hollow)
+    wall === nothing || return _hollow_density(kind, x, wall, node)
     if haskey(_DENSITY_2D, kind)
         0 < x < 0.5 || throw(ArgumentError("relative_density(:$kind, x): x = thickness / strut length must be in (0, 0.5)"))
         return _DENSITY_2D[kind](x)
@@ -363,3 +364,107 @@ const _DENSITY_2D = Dict(:square => x -> 2x - x^2,
                          :triangular => x -> 1 - (1 - sqrt(3) * x)^2,
                          :honeycomb => x -> 1 - (1 - x / sqrt(3))^2,
                          :kagome => x -> 1 - 0.75 * (1 - x / sqrt(3))^2 - 0.25 * (1 - sqrt(3) * x)^2)
+
+# ---------------------------------------------------------------- hollow struts
+
+_node_of(ξ, f) = findfirst(n -> all(x -> abs(mod(x + 0.5, 1.0) - 0.5) < 1e-7, f .- n), ξ)
+
+"""
+    hollow_struts(cell, nodes, edges; radius, wall, node = :hollow, node_radius = :auto) -> (shell, core)
+
+A strut lattice of tubes of outer `radius` and `wall` thickness. `shell` are the items of
+`struts(cell, nodes, edges; radius, node_radius)` and `core` the items of the cavity, a phase
+painted over the shell (after it in the list of phases): a void phase for empty tubes, or a
+material phase for a core-shell lattice. `node = :hollow` makes the nodes hollow too (one
+connected cavity, a lattice of radius `radius - wall`); `node = :solid` keeps them solid (one
+closed cavity per strut, starting where the struts leave the node).
+
+```julia
+hl = hollow_struts(cell, t.nodes, t.edges; radius = 0.06, wall = 0.02)
+RVE(cell, [Phase(:lattice, hl.shell; fuse = true), Phase(:cavity, hl.core; fuse = true, void = true)]; matrix = nothing)
+```
+"""
+function hollow_struts(cell::Cell{3}, nodes, edges; radius, wall, node::Symbol=:hollow, node_radius=:auto)
+    node in (:hollow, :solid) || throw(ArgumentError("hollow_struts: node must be :hollow or :solid"))
+    radius isa Real || throw(ArgumentError("hollow_struts: one radius for all the struts"))
+    w = _positive(wall, "hollow_struts wall")
+    w < radius || throw(ArgumentError("hollow_struts: the wall ($w) must be thinner than the radius ($radius)"))
+    r = radius - w
+    shell = struts(cell, nodes, edges; radius=radius, node_radius=node_radius)
+    if node === :hollow
+        rn = node_radius === nothing ? nothing : node_radius === :auto ? :auto : node_radius .- w
+        rn isa Union{Real,AbstractVector} && any(<=(0), rn) && throw(ArgumentError("hollow_struts: node_radius must exceed the wall"))
+        return (shell=shell, core=struts(cell, nodes, edges; radius=r, node_radius=rn))
+    end
+    # solid nodes: the cavity of each strut starts where the struts leave the node
+    ξ = [map(_wrap01, Float64.(Tuple(p))) for p in nodes]
+    cyl = Cylinder[c for c in shell if c isa Cylinder]
+    dirs = [NTuple{3,Float64}[] for _ in ξ]
+    ends = Tuple{Int,Int}[]
+    for c in cyl
+        i = _node_of(ξ, (c.base .- cell.origin) ./ cell.size); j = _node_of(ξ, (c.base .+ c.axis .- cell.origin) ./ cell.size)
+        push!(ends, (i, j))
+        d = c.axis ./ _norm(c.axis)
+        any(x -> _norm(x .- d) < 1e-9, dirs[i]) || push!(dirs[i], d)
+        any(x -> _norm(x .+ d) < 1e-9, dirs[j]) || push!(dirs[j], .-d)
+    end
+    Rn = zeros(length(ξ))
+    for s in shell
+        s isa Sphere || continue
+        i = _node_of(ξ, (s.center .- cell.origin) ./ cell.size); Rn[i] = max(Rn[i], s.radius)
+    end
+    gap = map(eachindex(ξ)) do i
+        d = dirs[i]
+        c = maximum(sum(d[p] .* d[q]) for p in eachindex(d) for q in p+1:length(d); init=-1.0)
+        max(Rn[i], radius, radius / sqrt((1 - c) / 2))
+    end
+    core = Geometry{3}[]; solid = 0
+    for (c, (i, j)) in zip(cyl, ends)
+        L = _norm(c.axis); d = c.axis ./ L
+        len = L - gap[i] - gap[j]
+        len > 1e-9 * L ? push!(core, Cylinder(c.base .+ gap[i] .* d, len .* d, r)) : (solid += 1)
+    end
+    solid > 0 && @warn "hollow_struts: $solid struts are too short for a cavity between solid nodes and stay solid"
+    isempty(core) && throw(ArgumentError("hollow_struts: no strut is long enough for a cavity between solid nodes"))
+    return (shell=shell, core=core)
+end
+
+"""
+    hollow_lattice(cell, kind; radius, wall = nothing, density = nothing, node = :hollow, node_radius = :auto) -> (shell, core)
+
+[`hollow_struts`](@ref) of a preset lattice (see [`lattice_topology`](@ref)) with the outer
+`radius` and either the `wall` thickness or the relative `density` of the tubes (cubic cell
+and `node_radius = :auto`). The exact density is
+[`relative_density`](@ref)`(kind, radius / a; wall = wall / a, node)`.
+"""
+function hollow_lattice(cell::Cell{3}, kind::Symbol; radius, wall=nothing, density=nothing, node::Symbol=:hollow, node_radius=:auto)
+    (wall === nothing) == (density === nothing) && throw(ArgumentError("hollow_lattice: give exactly one of wall or density"))
+    t = lattice_topology(kind)
+    if density !== nothing
+        (maximum(cell.size) - minimum(cell.size) <= 1e-12 * maximum(cell.size) && node_radius === :auto) ||
+            throw(ArgumentError("hollow_lattice: density needs a cubic cell and node_radius = :auto; give the wall instead"))
+        a = cell.size[1]
+        ρR = relative_density(kind, radius / a)
+        0 < density < ρR || throw(ArgumentError("hollow_lattice: density must be below that of the solid lattice ($(round(ρR; digits=4)))"))
+        if node === :hollow
+            wall = radius - a * strut_radius(kind, ρR - density)
+        else                                   # cavity volume π r² Σ (L − gaps): the gaps do not depend on r
+            probe = hollow_struts(cell, t.nodes, t.edges; radius=radius, wall=radius / 2, node=:solid).core
+            wall = radius - sqrt((ρR - density) * volume(cell) / (π * sum(c -> _norm(c.axis), probe)))
+            wall > 0 || throw(ArgumentError("hollow_lattice: density too low for solid nodes with this radius"))
+        end
+    end
+    return hollow_struts(cell, t.nodes, t.edges; radius=radius, wall=wall, node=node, node_radius=node_radius)
+end
+
+# exact relative density of hollow_lattice in a cubic cell (x = radius / edge, wall / edge)
+function _hollow_density(kind, x, wall, node)
+    node in (:hollow, :solid) || throw(ArgumentError("relative_density: node must be :hollow or :solid"))
+    kind in _PRESETS_2D && throw(ArgumentError("relative_density: hollow struts are 3D only"))
+    w = _positive(wall, "relative_density wall")
+    w < x || throw(ArgumentError("relative_density: the wall ($w) must be thinner than the radius ($x)"))
+    node === :hollow && return relative_density(kind, x) - relative_density(kind, x - w)
+    c = Cell((1.0, 1.0, 1.0)); t = lattice_topology(kind)
+    core = hollow_struts(c, t.nodes, t.edges; radius=x, wall=w, node=:solid).core
+    return relative_density(kind, x) - sum(k -> π * k.radius^2 * _norm(k.axis), core)
+end

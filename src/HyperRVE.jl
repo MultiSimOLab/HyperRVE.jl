@@ -20,6 +20,7 @@ export Geometry, Sphere, Ellipsoid, Box, Cylinder, Capsule, Fibre, Disk, Ellipse
 export Fuse, Cut, Intersect, Translate, Rotate, Scale
 export Phase, RVE, supercell
 export struts, lattice, lattice_topology, relative_density, strut_radius, lattice_cell
+export hollow_struts, hollow_lattice
 export random_spheres, random_disks, random_fibres, random_capsules, orientation_tensor
 export Tessellation, voronoi, grains, grain_phases, grain_volumes
 export tessellation_edges, foam_struts, pores, wall_thickness

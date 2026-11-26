@@ -131,6 +131,17 @@ c = lattice_cell(:rotating_squares; a = 1.0, angle = π / 6)
 Phase(:squares, rotating_squares(c; angle = π / 6, hinge = 0.08); fuse = true)
 ```
 
+Hollow struts: `hollow_lattice(cell, kind; radius, wall | density, node = :hollow)` (or
+`hollow_struts(cell, nodes, edges; radius, wall)`) returns `(shell, core)`: the lattice of
+outer `radius` and its cavity, to be painted over it by a later phase, void (empty tubes) or
+material (core-shell). `node = :solid` keeps the nodes solid, one closed cavity per strut.
+`relative_density(kind, x; wall, node)` is the exact density.
+
+```julia
+hl = hollow_lattice(cell, :octet; radius = 0.06, wall = 0.02)
+RVE(cell, [Phase(:lattice, hl.shell; fuse = true), Phase(:cavity, hl.core; fuse = true, void = true)]; matrix = nothing)
+```
+
 ## Plate lattices
 
 `plate_cells(cell, kind; thickness | density, ratio)` returns the closed cells left by plates
