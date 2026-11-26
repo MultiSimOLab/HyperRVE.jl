@@ -146,8 +146,10 @@ function _orientation(orientation, axis, what)
     elseif orientation isa Union{Tuple,AbstractVector} && length(orientation) == 3 && all(x -> x isa Real, orientation)
         u = _normalize(_vec(Val(3), orientation, "$what orientation"), "$what orientation")
         return _ -> u
-    elseif orientation isa Symbol || orientation isa AbstractString || orientation isa Union{Tuple,AbstractVector,AbstractMatrix}
-        throw(ArgumentError("$what: orientation must be :isotropic, :planar, a direction (3 numbers) or a function rng -> direction, got $(repr(orientation))"))
+    elseif orientation isa AbstractMatrix
+        return _tensor_orientation(orientation, what)
+    elseif orientation isa Symbol || orientation isa AbstractString || orientation isa Union{Tuple,AbstractVector}
+        throw(ArgumentError("$what: orientation must be :isotropic, :planar, a direction (3 numbers), a 3×3 orientation tensor or a function rng -> direction, got $(repr(orientation))"))
     end
     return rng -> _normalize(_vec(Val(3), orientation(rng), "$what sampled direction"), "$what sampled direction")
 end
@@ -188,6 +190,58 @@ function _lengths(rng, V, len, r, fraction, n, what)
     return sort!(l; rev=true)
 end
 
+# ---------------------------------------------------------------- prescribed orientation tensor
+
+# second moments A_i of the central angular Gaussian with parameters b (principal axes), by the
+# trapezoidal rule in u = exp(x) of A_i = (b_i / 2) ∫₀^∞ du / ((1 + u b_i) √Π_j (1 + u b_j))
+function _acg_moments(b)
+    A = zeros(3)
+    h = 0.02
+    for x in -40.0:h:40.0
+        u = exp(x)
+        den = sqrt((1 + u * b[1]) * (1 + u * b[2]) * (1 + u * b[3]))
+        for i in 1:3
+            A[i] += b[i] / 2 * u / ((1 + u * b[i]) * den) * h
+        end
+    end
+    return A
+end
+
+# parameters b ≥ 0 (sum 1) whose central angular Gaussian has second moments λ
+function _acg_fit(λ)
+    count(>(1e-12), λ) <= 1 && return collect(λ)              # uniaxial: all along one axis
+    b = collect(λ)
+    for _ in 1:500
+        A = _acg_moments(b)
+        bn = [λ[i] > 0 ? b[i] * λ[i] / A[i] : 0.0 for i in 1:3]
+        bn ./= sum(bn)
+        maximum(abs.(bn .- b)) < 1e-12 && return bn
+        b = bn
+    end
+    return b
+end
+
+# sampler of unit directions with second-order orientation tensor A (symmetric, trace 1, PSD)
+function _tensor_orientation(A, what)
+    M = Float64.(A)
+    size(M) == (3, 3) || throw(ArgumentError("$what: an orientation tensor must be 3×3"))
+    all(isfinite, M) || throw(ArgumentError("$what: the orientation tensor must be finite"))
+    maximum(abs.(M .- M')) <= 1e-9 || throw(ArgumentError("$what: the orientation tensor must be symmetric"))
+    abs(M[1, 1] + M[2, 2] + M[3, 3] - 1) <= 1e-6 || throw(ArgumentError("$what: the orientation tensor must have trace 1"))
+    E = LinearAlgebra.eigen(LinearAlgebra.Symmetric(M))
+    minimum(E.values) >= -1e-9 || throw(ArgumentError("$what: the orientation tensor must be positive semidefinite"))
+    λ = max.(E.values, 0.0)
+    b = _acg_fit(λ ./ sum(λ))
+    S = E.vectors * LinearAlgebra.Diagonal(sqrt.(b))           # B^(1/2) up to the rotation of z
+    return function (rng)
+        while true
+            v = S * randn(rng, 3)
+            n = sqrt(sum(abs2, v))
+            n > 1e-12 && return (v[1] / n, v[2] / n, v[3] / n)
+        end
+    end
+end
+
 """
     random_capsules(cell; length, radius, fraction, n, orientation = :isotropic, axis = 3,
                     min_gap = :auto, face_gap = :auto, boundary = :periodic, avoid = nothing,
@@ -199,7 +253,10 @@ the two caps (total length `length + 2 radius`): a number with `fraction` or `n`
 a vector of lengths, or a sampler `rng -> length` with `fraction` or `n`.
 
 - `orientation`: `:isotropic` (uniform on the sphere), `:planar` (uniform in the plane normal to
-  `axis`), a direction `(x, y, z)` (all aligned with it) or a function `rng -> direction`. Each
+  `axis`), a direction `(x, y, z)` (all aligned with it), a 3×3 second-order orientation
+  tensor `A` (symmetric, positive semidefinite, trace 1; directions drawn from the central
+  angular Gaussian with that second moment, so `orientation_tensor` of many fibres tends to
+  `A`) or a function `rng -> direction`. Each
   fibre draws its orientation once; failed attempts only move it, so the orientations are not
   biased by the rejections. Orientations in which the fibre cannot exist at all (longer than
   the cell and touching its own periodic images, or not fitting with `boundary = :inside`) are

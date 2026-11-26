@@ -11,6 +11,7 @@ assignment, physical groups and periodic meshing are handled automatically.
 module HyperRVE
 
 using Gmsh: Gmsh, gmsh
+using LinearAlgebra: LinearAlgebra
 using Printf: @sprintf
 using Random: Random, AbstractRNG
 

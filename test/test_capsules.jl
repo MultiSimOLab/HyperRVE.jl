@@ -140,7 +140,7 @@ end
     @test_throws ArgumentError random_capsules(c; length=[0.3], radius=0.03, n=5)
     @test_throws ArgumentError random_capsules(c; length=0.3, radius=0.03, n=5, orientation=:random)
     @test_throws ArgumentError random_capsules(c; length=0.3, radius=0.03, n=5, orientation=(0, 0, 0))
-    @test_throws ArgumentError random_capsules(c; length=0.3, radius=0.03, n=5, orientation=[1 0 0; 0 0 0; 0 0 0])
+    @test_throws ArgumentError random_capsules(c; length=0.3, radius=0.03, n=5, orientation=[1 0 0; 0 1 0; 0 0 0])
     @test_throws ArgumentError random_capsules(c; length=0.3, radius=0.03, n=5, orientation=:planar, axis=4)
     @test_throws ArgumentError random_capsules(c; length=1.2, radius=0.03, n=5, orientation=(0, 0, 1))   # use random_fibres
     @test_throws ArgumentError random_capsules(c; length=0.3, radius=0.6, n=1)

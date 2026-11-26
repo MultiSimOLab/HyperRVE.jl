@@ -177,7 +177,8 @@ random_disks(Cell((2.0, 2.0)); radius = 0.04, fraction = 0.15, cluster = (n = 5,
 
 Short fibres: `random_capsules(cell; length, radius, fraction | n, orientation)` places
 non-overlapping capsules (`length` between the cap centres) with `orientation = :isotropic`,
-`:planar` (with `axis`), a direction, or a function `rng -> direction`; the other keywords as
+`:planar` (with `axis`), a direction, a 3×3 orientation tensor `A` (symmetric, trace 1;
+directions from the central angular Gaussian with second moment `A`), or a function `rng -> direction`; the other keywords as
 above, `avoid` included (hybrid particle + fibre composites). `orientation_tensor(fibres)` gives
 the second-order orientation tensor. Random sequential addition of slender isotropic fibres
 saturates early (about 0.15 for a total aspect ratio of 10); aligned fibres reach about 0.3.

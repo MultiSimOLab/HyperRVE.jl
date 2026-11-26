@@ -25,6 +25,11 @@ println(length(f), " aligned fibres, fraction ", round(volume_fraction(res, :fib
 # hybrid composite: particles first, fibres around them
 p = random_spheres(cell; radius = 0.12, n = 6, rng = 4)
 f = random_capsules(cell; length = 0.3, radius = 0.04, n = 12, avoid = p, min_gap = 0.02, rng = 5)
-rve = RVE(cell, [Phase(:particles, p; refine = 0.04), Phase(:fibres, f; refine = 0.03)]; overlaps = :error)
+rve = RVE(cell, [Phase(:particles, p; refine = 0.03), Phase(:fibres, f; refine = 0.02)]; overlaps = :error)
 res = generate(rve; h = 0.1, output = joinpath(@__DIR__, "short_fibres_hybrid.msh"))
 println(length(p), " particles + ", length(f), " fibres, fractions ", volume_fractions(res))
+
+# prescribed second-order orientation tensor, mostly along x
+A = [0.7 0.0 0.0; 0.0 0.25 0.0; 0.0 0.0 0.05]
+f = random_capsules(Cell((2.0, 2.0, 2.0)); length = 0.2, radius = 0.02, n = 300, orientation = A, rng = 6)
+println("orientation tensor diagonal ", round.([orientation_tensor(f)[i, i] for i in 1:3]; digits = 2), " (target 0.7, 0.25, 0.05)")

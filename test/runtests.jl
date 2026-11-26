@@ -21,6 +21,7 @@ include("helpers.jl")
     @testset "Random packings" begin include("test_random.jl") end
     @testset "Mixtures and clusters" begin include("test_mixtures.jl") end
     @testset "Short fibres (capsules)" begin include("test_capsules.jl") end
+    @testset "Orientation tensors" begin include("test_orientation.jl") end
     @testset "Polyhedra and polygons" begin include("test_polyhedra.jl") end
     @testset "Voronoi tessellations" begin include("test_voronoi.jl") end
     @testset "Void phases and foams" begin include("test_foams.jl") end
