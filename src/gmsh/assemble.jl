@@ -123,20 +123,27 @@ function _fused_tools!(rve::RVE{D}, ph::Phase{D}, frame, ctx, lo, ℓ, n, tol) w
     return _fused_copies!(rve, ph, frame, ctx, lo, ℓ, n, tol)
 end
 
-"All items and their images for an `m`-tiled domain, duplicates dropped, fused."
 # Distance from c to the slice of the box [lo, hi] by the plane through c normal to the unit
-# vector d (Inf if the plane misses the box).
+# vector d (Inf if the plane misses the box). The nearest point of the slice is
+# clamp(c + λ d) for the root λ of the nondecreasing piecewise-linear
+# φ(λ) = d · (clamp(c + λ d) − c): solved exactly between its breakpoints.
 function _slice_dist(c, d, lo, hi)
+    dc = _dot(d, c)
+    smin = sum(min(d[i] * lo[i], d[i] * hi[i]) for i in 1:3)
+    smax = sum(max(d[i] * lo[i], d[i] * hi[i]) for i in 1:3)
+    (dc < smin || dc > smax) && return Inf
     φ(λ) = sum(d[i] * (clamp(c[i] + λ * d[i], lo[i], hi[i]) - c[i]) for i in 1:3)
-    S = 4 * (_norm(hi .- lo) + _norm(c .- lo))
-    a, b = -S, S
-    (φ(a) > 0 || φ(b) < 0) && return Inf
-    for _ in 1:200
-        m = (a + b) / 2
-        φ(m) < 0 ? (a = m) : (b = m)
-        b - a < 1e-15 * S && break
+    bp = sort!([(b - c[i]) / d[i] for i in 1:3 if d[i] != 0 for b in (lo[i], hi[i])])
+    λ = if φ(bp[1]) >= 0
+        bp[1]
+    elseif φ(bp[end]) <= 0
+        bp[end]
+    else
+        k = findfirst(j -> φ(bp[j + 1]) >= 0, 1:length(bp)-1)
+        a, b = bp[k], bp[k + 1]
+        fa, fb = φ(a), φ(b)
+        fb == fa ? a : a - fa * (b - a) / (fb - fa)       # φ is linear on [a, b]
     end
-    λ = (a + b) / 2
     return _norm(clamp.(c .+ λ .* d, lo, hi) .- c)
 end
 

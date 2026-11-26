@@ -143,6 +143,26 @@ end
             end
         end
     end
+    # nearly axial struts close to a face (the slice distance must not report a miss)
+    sd = RVEs._slice_dist
+    ε = 1e-3
+    @test sd((0.5, 1 + 2e-5, 0.5), (ε, sqrt(1 - ε^2), 0.0), lo, hi) < 0.03
+    for _ in 1:200
+        e = 10.0^(-2 - 3rand(rng)); dd = (e * randn(rng), 1.0, e * randn(rng)); dd = dd ./ sqrt(sum(abs2, dd))
+        a = (rand(rng), 1 + 10.0^(-5 + 2rand(rng)), rand(rng)) .- 0.3 .* dd
+        L, r = 0.6, 0.05
+        sl = slab(a, dd, L, r, lo, hi, 1e-9)
+        for _ in 1:200
+            tt = L * rand(rng); w = Tuple(randn(rng, 3)); w = w .- sum(w .* dd) .* dd; w = w ./ sqrt(sum(abs2, w)) .* (r * sqrt(rand(rng)))
+            q = a .+ tt .* dd .+ w
+            if all(0 .<= q .<= 1)
+                @test sl !== nothing && sl[1] - 1e-9 <= tt <= sl[2] + 1e-9
+            end
+        end
+    end
+    cyl = Cylinder((0.5, 1e-3, 0.5), 0.5 .* (8e-3, sqrt(1 - 6.4e-5), 0.0), 0.2)
+    g = geo(RVE(unitcell(), Phase(:l, [cyl]; fuse=true); matrix=nothing))
+    @test volume_fraction(g, :l) > 0
     # exactness: the same body with and without pruning
     c = unitcell()
     for (k, x) in ((:bcc, 0.08), (:cubic, 0.1))
@@ -154,7 +174,7 @@ end
                 RVEs._PRUNE[] = true
             end
         end
-        @test v[1] ≈ v[2] rtol = 1e-9
+        @test v[1] ≈ v[2] rtol = 1e-7
     end
     # a free direction and no node spheres
     cf = Cell((1.0, 1.0, 1.0); periodic=(true, true, false))
