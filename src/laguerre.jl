@@ -95,7 +95,8 @@ them, or a vector of radii, or a sampler `rng -> r` with `fraction` or `n`.
   along non-periodic directions they stay inside the cell.
 - `min_gap`: minimum distance between sphere surfaces.
 - If the packing jams before reaching the requested radii, `strict = true` throws an error
-  with the fraction reached; `strict = false` warns and returns the spheres scaled down to it.
+  with the fraction reached; `strict = false` warns and returns the spheres scaled down to it
+  (keeping `min_gap`; an error if the smallest spheres would vanish).
 
 The result is meant both as an inclusion phase and as the seeds of a [`laguerre`](@ref)
 tessellation (`laguerre(cell; spheres = dense_spheres(...))`).
@@ -122,9 +123,12 @@ function dense_spheres(cell::Cell{D}; radius=nothing, fraction=nothing, n=nothin
     if g < 1
         ok = all(>(0), Rout)
         ηo = ok ? sum(_ballvol(Val(D), x) for x in Rout) / V : 0.0
-        msg = @sprintf("dense_spheres: the packing jammed at fraction %.3f (requested %.3f%s); reduce fraction or min_gap",
-                       ηo, η, gap > 0 ? " with min_gap" : "")
-        (strict || !ok) && throw(ArgumentError(ok ? msg : msg * " (min_gap is larger than the smallest spheres can keep)"))
+        ηe = sum(_ballvol(Val(D), x + gap / 2) for x in R) / V          # counting half the gap around each sphere
+        msg = ok ? @sprintf("dense_spheres: the packing jammed at fraction %.3f (requested %.3f%s); reduce fraction or min_gap",
+                            ηo, η, gap > 0 ? @sprintf(", %.3f counting min_gap", ηe) : "") :
+              @sprintf("dense_spheres: the packing jammed and min_gap is larger than the smallest spheres can keep (requested fraction %.3f, %.3f counting min_gap); reduce fraction or min_gap",
+                       η, ηe)
+        (strict || !ok) && throw(ArgumentError(msg))
         @warn msg
     end
     G = D == 3 ? Sphere : Disk

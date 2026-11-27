@@ -54,7 +54,7 @@ end)
     cg = Cell((5.0, 5.0, 5.0))
     s = @test_logs (:warn, r"jammed") dense_spheres(cg; radius=[fill(1.0, 15); fill(0.3, 30)], min_gap=0.15, rng=1, strict=false)
     @test min_clearance(s, cg) >= 0.15 - 1e-9 && all(x -> x.radius > 0, s)
-    @test_throws r"min_gap is larger" dense_spheres(cg; radius=[fill(1.0, 15); fill(0.02, 30)], min_gap=0.4, rng=1, strict=false)
+    @test_throws r"min_gap is larger.*counting min_gap" dense_spheres(cg; radius=[fill(1.0, 15); fill(0.02, 30)], min_gap=0.4, rng=1, strict=false)
     # spheres large compared with the cell: no overlap with any image
     s = dense_spheres(Cell((1.0, 1.0, 1.0)); radius=0.3, n=3, rng=1)
     @test min_clearance_images(s, Cell((1.0, 1.0, 1.0))) >= 0
