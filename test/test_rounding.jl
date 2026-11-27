@@ -1,4 +1,4 @@
-using HyperRVE, Test, Random
+using HyperRVE, Test, Random, Gmsh
 const HR = HyperRVE
 
 lognormal_r(rng) = (while true
@@ -42,14 +42,20 @@ end
     @test ρ(0.0) <= ρ(0.5) < ρ(0.9) < ρ(1.0)
     r = pore_rounding(t, 0.12; wall=0.006)
     @test 0.9 < r < 1
-    @test ρ(r) ≈ 0.12 rtol = 2e-3
-    @test wall_thickness(t, 0.12; rounding=r) ≈ 0.006 rtol = 1e-4
+    @test ρ(r) ≈ 0.12 rtol = 3e-3
+    @test wall_thickness(t, 0.12; rounding=r) ≈ 0.006 rtol = 5e-2
+    # several targets: the documented accuracy (a few tens of pores)
+    for target in (0.09, 0.1, 0.13, 0.16)
+        @test ρ(pore_rounding(t, target; wall=0.006)) ≈ target rtol = 3e-3
+        @test HR._foam_density(t, wall_thickness(t, target; rounding=0.95), 0.95) ≈ target rtol = 3e-3
+    end
     # out of reach
     @test_throws r"below the polyhedral foam" pore_rounding(t, 0.02; wall=0.006)
     @test_throws r"above the fully rounded" pore_rounding(t, 0.5; wall=0.006)
     @test_throws r"reduce rounding" wall_thickness(t, 0.05; rounding=1.0)
     @test_throws r"rounding must be" pores(t; wall=0.01, rounding=1.5)
     @test_throws r"rounding must be" wall_thickness(t, 0.1; rounding=-0.1)
+    @test_throws r"rounding must be" pores(t; wall=0.01, rounding=true)
     # rounded pores: balls, intersections or polyhedra; the mesh has the predicted density
     P = pores(t; wall=0.006, rounding=r)
     @test all(p -> p isa Union{Intersect,Polyhedron,Sphere,Rotate}, P)
@@ -72,12 +78,55 @@ end
 end
 
 @testset "generate retries with a shift" begin
-    @test_throws ArgumentError generate(RVE(Cell((1.0, 1.0, 1.0)), Phase(:s, Sphere((0.5, 0.5, 0.5), 0.2))); h=0.3, retries=-1)
-    @test_throws ArgumentError generate(RVE(Cell((1.0, 1.0, 1.0)), Phase(:s, Sphere((0.5, 0.5, 0.5), 0.2))); h=0.3, retries=4)
-    # a failure on the periodic faces is retried on the shifted material (a stub failure)
-    res = generate(RVE(Cell((1.0, 1.0, 1.0)), Phase(:s, Sphere((0.5, 0.5, 0.5), 0.2))); h=0.3, retries=1)
-    @test res.stats.nelements > 0
+    cell = Cell((1.0, 1.0, 1.0))
+    rve = RVE(cell, Phase(:s, Sphere((0.5, 0.5, 0.5), 0.2)))
+    @test_throws ArgumentError generate(rve; h=0.3, retries=-1)
+    @test_throws ArgumentError generate(rve; h=0.3, retries=4)
+    @test_throws ArgumentError generate(RVE(Cell((1.0, 1.0, 1.0); periodic=false), Phase(:s, Sphere((0.5, 0.5, 0.5), 0.2))); h=0.3, retries=10)
+    # a failure on the periodic faces is retried on the shifted material
+    HR._FORCED_FAILURES[] = 1
+    res = @test_logs (:warn, r"shifted by") match_mode = :any generate(rve; h=0.3, retries=1)
+    @test res.stats.nelements > 0 && all(x -> x.ok, res.periodicity)
+    @test res.rve.phases[1].items[1] isa Translate
+    @test volume_fraction(res, :s) ≈ 4π * 0.2^3 / 3 rtol = 1e-6
+    # retries exhausted: the error; without retries no retry
+    HR._FORCED_FAILURES[] = 2
+    @test_throws PeriodicityError generate(rve; h=0.3, retries=1)
+    HR._FORCED_FAILURES[] = 0
+    # inside a user session too, and the session still meshes afterwards
+    gmsh.initialize()
+    try
+        HR._FORCED_FAILURES[] = 1
+        @test generate(rve; h=0.3, retries=2).stats.nelements > 0
+        @test generate(rve; h=0.3).stats.nelements > 0
+    finally
+        HR._FORCED_FAILURES[] = 0
+        gmsh.finalize()
+    end
+    # errors of the do-block are not retried
+    n = Ref(0)
+    @test_throws PeriodicityError generate(rve; h=0.3, retries=3) do _
+        n[] += 1
+        throw(PeriodicityError(1, "from the user"))
+    end
+    @test n[] == 1
     @test HR._periodic_failure(ErrorException("Gmsh failed to mesh the RVE (Periodic meshing of surface 1 with surface 2)"))
     @test HR._periodic_failure(PeriodicityError(1, "x"))
     @test !HR._periodic_failure(ArgumentError("Periodic"))
+    @test !HR._periodic_failure(ErrorException("Gmsh did not mesh the RVE completely"))
+end
+
+@testset "Gmsh errors do not lock a user session" begin
+    # an error logged by Gmsh is raised from Julia; the session keeps meshing
+    gmsh.initialize()
+    try
+        gmsh.model.add("lock")
+        gmsh.model.occ.addBox(0, 0, 0, 1, 1, 1); gmsh.model.occ.synchronize()
+        errs = HR._logged_generate(3)
+        @test isempty(errs)
+        @test generate(RVE(Cell((1.0, 1.0, 1.0)), Phase(:s, Sphere((0.5, 0.5, 0.5), 0.2))); h=0.3).stats.nelements > 0
+        @test gmsh.option.getNumber("General.AbortOnError") == 2
+    finally
+        gmsh.finalize()
+    end
 end

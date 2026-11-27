@@ -73,6 +73,13 @@ _edges(P::_Poly2) = [(P.pts[k], P.pts[mod1(k + 1, length(P.pts))]) for k in each
 # distances from c at which a sphere centred at c is tangent to (or passes through) a feature
 function _critical_distances(P, planes, c::NTuple{D,Float64}, L) where {D}
     d = Float64[]
+    V = _bodyvertices(P)
+    blo = ntuple(k -> minimum(v -> v[k], V), D)
+    bhi = ntuple(k -> maximum(v -> v[k], V), D)
+    tol = 1e-6 * maximum(L)
+    # a point of a pore face (inside the pore's planes) and of the closed cell
+    onpore(q) = all(((n, b),) -> _dot(n, q) <= b + tol, planes) && all(k -> blo[k] - tol <= q[k] <= bhi[k] + tol, 1:D)
+    incell(q) = all(k -> -tol <= q[k] <= L[k] + tol, 1:D)
     for v in _bodyvertices(P)
         push!(d, _norm(v .- c))
     end
@@ -98,12 +105,13 @@ function _critical_distances(P, planes, c::NTuple{D,Float64}, L) where {D}
             nu > 1e-9 || continue
             # point on both planes closest to c: c + α n + β m, n·x = b, x_k = x
             nm = n[k]
-            A = [1.0 nm; nm 1.0]
             rhs = [b - _dot(n, c), x - c[k]]
             abs(1 - nm^2) > 1e-12 || continue
-            αβ = A \ rhs
-            q = c .+ αβ[1] .* n .+ αβ[2] .* m
-            push!(d, _norm(q .- c))
+            det = 1 - nm^2
+            α = (rhs[1] - nm * rhs[2]) / det
+            β = (rhs[2] - nm * rhs[1]) / det
+            q = c .+ α .* n .+ β .* m
+            onpore(q) && incell(q) && push!(d, _norm(q .- c))
         end
         for j in k+1:D, y in (0.0, L[j])                              # cell edge
             push!(d, sqrt((c[k] - x)^2 + (c[j] - y)^2))
@@ -115,11 +123,16 @@ function _critical_distances(P, planes, c::NTuple{D,Float64}, L) where {D}
                 q = ntuple(l -> l == k ? x : l == j ? y : 0.0, 3)
                 qi = (b - nv[k] * x - nv[j] * y) / nv[i]
                 q = ntuple(l -> l == i ? qi : q[l], 3)
-                push!(d, _norm(q .- c))
+                onpore(q) && incell(q) && push!(d, _norm(q .- c))
             end
         end
     end
-    return d
+    for corner in Iterators.product(ntuple(k -> (0.0, L[k]), D)...)   # cell corners
+        push!(d, _norm(corner .- c))
+    end
+    # beyond the farthest pore vertex the ball contains the pore: nothing to clear
+    far = maximum(v -> _norm(v .- c), V)
+    return filter(x -> x <= 1.01 * far, d)
 end
 
 # the radius nearest to R that keeps a relative margin δ from every critical distance, moving
@@ -174,8 +187,59 @@ end
 _foam_density(t::Tessellation, w, r) = 1 - sum(_pore_volume(t, i, w, r) for i in eachindex(t.loops)) / prod(t.cell.size)
 
 function _check_rounding(r, what)
-    r isa Real && 0 <= r <= 1 || throw(ArgumentError("$what: rounding must be a number in [0, 1], got $(repr(r))"))
+    r isa Real && !(r isa Bool) && 0 <= r <= 1 || throw(ArgumentError("$what: rounding must be a number in [0, 1], got $(repr(r))"))
     return Float64(r)
+end
+
+# per grain, for a fixed wall: the pieces of the shrunk grain (with their planes and shifts),
+# the centre and equivalent radius of its ball and the critical distances of the radius
+function _pore_data(t::Tessellation{D}, w) where {D}
+    L = t.cell.size
+    out = []
+    for i in eachindex(t.loops)
+        P = _shrunk(t, i, w / 2)
+        P === nothing && continue
+        planes, c = _body_planes(P)
+        r0 = D == 3 ? (3 * _poly_volume(P) / 4π)^(1 / 3) : sqrt(_poly_volume(P) / π)
+        crit = _critical_distances(P, planes, c, L)
+        pieces = [(Q, c .+ s .* L, first(_body_planes(Q)), _poly_volume(Q), maximum(p -> _norm(p .- (c .+ s .* L)), _bodyvertices(Q)))
+                  for (Q, s) in _cell_pieces(t, P; shifts=true)]
+        push!(out, (r0, crit, pieces))
+    end
+    return out
+end
+
+function _ball_volume(planes, c::NTuple{D,Float64}, R, vol, rmax) where {D}
+    rmax <= R && return vol
+    rays = D == 3 ? _RAYS3 : _RAYS2
+    s = 0.0
+    @inbounds for u in rays
+        t0, t1 = 0.0, R
+        for (n, b) in planes
+            a = _dot(n, u)
+            h = b - _dot(n, c)
+            if a > 0
+                t1 = min(t1, h / a)
+            elseif a < 0
+                t0 = max(t0, h / a)
+            elseif h < 0
+                t1 = -1.0
+            end
+        end
+        t1 > t0 && (s += t1^D - t0^D)
+    end
+    return D == 3 ? s * 4π / (3 * length(rays)) : s * π / length(rays)
+end
+
+function _cached_density(data, r, V)
+    pv = 0.0
+    for (r0, crit, pieces) in data
+        R = _clear_radius(r0 / r, crit)
+        for (planes, cs, vol, rmax) in ((p[3], p[2], p[4], p[5]) for p in pieces)
+            pv += _ball_volume(planes, cs, R, vol, rmax)
+        end
+    end
+    return 1 - pv / V
 end
 
 """
@@ -185,25 +249,35 @@ Rounding of the closed-cell foam [`pores`](@ref)`(t; wall, rounding)` with the g
 density (volume fraction of the walls) and wall thickness: the pores get rounder (thicker
 nodes and edges) until the solid reaches `density`. Throws an error when the density is out of
 reach: below the polyhedral foam with that wall (`rounding = 0`, reduce `wall`) or above
-`rounding = 1` (increase `wall`). The volumes are integrated numerically (about 1e-4 of the
-pore volume); `volume_fraction` of the meshed RVE gives the exact value.
+`rounding = 1` (increase `wall`).
+
+The density is reached to a few 1e-3 (relative) with a few tens of pores, up to about 2e-2
+with only a few pores: each ball radius is moved by up to 0.5 % away from tangencies that Gmsh cannot mesh,
+so the density jumps slightly with the rounding. `volume_fraction` of the meshed RVE gives the
+exact value.
 """
 function pore_rounding(t::Tessellation{D}, density::Real; wall) where {D}
     0 < density < 1 || throw(ArgumentError("pore_rounding: density must be in (0, 1)"))
     w = Float64(wall)
     w >= 0 || throw(ArgumentError("pore_rounding: wall must be >= 0"))
-    ρ0, ρ1 = _foam_density(t, w, 0.0), _foam_density(t, w, 1.0)
+    V = prod(t.cell.size)
+    data = _pore_data(t, w)
+    ρ(r) = _cached_density(data, r, V)
+    ρ0, ρ1 = _foam_density(t, w, 0.0), ρ(1.0)
     density < ρ0 && throw(ArgumentError(@sprintf("pore_rounding: the density %.4g is below the polyhedral foam with wall = %.4g (%.4g); reduce wall",
                                                  density, w, ρ0)))
     density > ρ1 && throw(ArgumentError(@sprintf("pore_rounding: the density %.4g is above the fully rounded foam (rounding = 1) with wall = %.4g (%.4g); increase wall",
                                                  density, w, ρ1)))
     lo, hi = 1e-3, 1.0
-    for _ in 1:60
+    ρlo, ρhi = ρ(lo), ρ1
+    for _ in 1:40
         m = (lo + hi) / 2
-        _foam_density(t, w, m) < density ? (lo = m) : (hi = m)
-        hi - lo < 1e-10 && break
+        ρm = ρ(m)
+        ρm < density ? ((lo, ρlo) = (m, ρm)) : ((hi, ρhi) = (m, ρm))
+        hi - lo < 1e-8 && break
     end
-    return (lo + hi) / 2
+    # the density may jump inside the last bracket: the end closer to the target
+    return abs(ρlo - density) <= abs(ρhi - density) ? lo : hi
 end
 
 # OCC parametrises a sphere with poles along its z axis and the seam (u = 0) towards +x; a
@@ -246,6 +320,19 @@ function _ball_rotation(cs::NTuple{3,Float64}, R, planes)
             end
         end
         m > bestm && ((best, bestm) = ((axis, θ), m))
+    end
+    return best
+end
+
+function _disk_rotation(cs::NTuple{2,Float64}, R, planes)
+    cuts = [(n, b) for (n, b) in planes if abs(b - _dot(n, cs)) < R]
+    isempty(cuts) && return 0.0
+    best, bestm = 0.0, -Inf
+    for k in 0:23
+        θ = 2π * k / 24 + (k > 0 ? 0.1 : 0.0)
+        p = cs .+ R .* (cos(θ), sin(θ))
+        m = minimum(abs(_dot(n, p) - b) for (n, b) in cuts) / R
+        m > bestm && ((best, bestm) = (θ, m))
     end
     return best
 end

@@ -145,7 +145,8 @@ function _cell_pieces(t::Tessellation{D}, P; shifts::Bool=false) where {D}
 end
 
 """
-    pores(t; wall, rounding = 0) -> Vector{Polyhedron} (3D) or Vector{Polygon} (2D), or rounded pores
+    pores(t; wall, rounding = 0) -> Vector{Polyhedron} (3D) or Vector{Polygon} (2D);
+                                    with rounding a Vector{Geometry} (Intersect, Polyhedron, ball)
 
 The grains shrunk by `wall / 2` on every face: the pores of a closed-cell foam whose walls
 (the rest of the cell) have thickness `wall`. Grains that vanish are skipped with a warning.
@@ -200,8 +201,9 @@ end
 
 Wall thickness of the closed-cell foam [`pores`](@ref)`(t; wall, rounding)` with the given
 relative density (volume fraction of the walls): exact for polyhedral pores, about 1e-4 of the
-pore volume for rounded pores (bisection on the pore volumes). With rounding, a density below
-that of the rounded foam with no wall is out of reach (error).
+pore volume for rounded pores, where the density is reached to a few 1e-3 (see
+[`pore_rounding`](@ref)); with rounding, a density below that of the rounded foam with no wall
+is out of reach (error).
 """
 function wall_thickness(t::Tessellation{D}, density::Real; rounding=0) where {D}
     0 < density < 1 || throw(ArgumentError("wall_thickness: density must be in (0, 1)"))
@@ -216,9 +218,11 @@ function wall_thickness(t::Tessellation{D}, density::Real; rounding=0) where {D}
     for _ in 1:200
         m = (lo + hi) / 2
         ρ(m) < density ? (lo = m) : (hi = m)
-        hi - lo < 1e-13 * maximum(t.cell.size) && break
+        hi - lo < (r > 0 ? 1e-9 : 1e-13) * maximum(t.cell.size) && break
     end
-    return (lo + hi) / 2
+    r > 0 || return (lo + hi) / 2
+    # rounded: the density may jump inside the last bracket; the end closer to the target
+    return abs(ρ(lo) - density) <= abs(ρ(hi) - density) ? lo : hi
 end
 
 # rounded pores: the pieces of each shrunk grain intersected with its ball (the ball is
@@ -263,7 +267,10 @@ function _rounded_pores(t::Tessellation{D}, w, r) where {D}
                 ax, θ = _ball_rotation(cs, R, vcat(planes, fp))
                 θ == 0 ? Sphere(t.cell.origin .+ cs, R) : Rotate(Sphere(t.cell.origin .+ cs, R); axis=ax, angle=θ)
             else
-                Disk(t.cell.origin .+ cs, R)
+                # the OCC circle has a vertex at +x: keep it away from the cutting lines
+                fl = [(ntuple(k -> k == d ? sg : 0.0, 2), sg * x) for d in 1:2 for (sg, x) in ((1.0, L[d]), (-1.0, 0.0))]
+                θ = _disk_rotation(cs, R, vcat(planes, fl))
+                θ == 0 ? Disk(t.cell.origin .+ cs, R) : Rotate(Disk(t.cell.origin .+ cs, R); angle=θ)
             end
             if all(((n, b),) -> b - _dot(n, cs) >= R, planes)
                 push!(out, ball)

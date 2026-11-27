@@ -22,8 +22,8 @@ periodicity and mesh it. Gmsh is initialised and finalised automatically; the re
 - `retries`: if Gmsh fails to mesh matching periodic faces (tiny curved patches on the faces,
   e.g. with rounded pores), try again up to `retries` (at most 3) times with every phase
   translated by a small shift along the periodic directions: the same periodic material, cut
-  by the cell faces elsewhere (a warning gives the shift; default 0). Only for microstructures
-  that are periodic along those directions.
+  by the cell faces elsewhere. A warning gives the shift, and `res.rve` holds the shifted
+  phases (default 0; not for TPMS). Errors of the do-block are not retried.
 - `interfaces`: create the interface physical groups (see below); `:union` creates only their
   union `interfaces` (for many phases, e.g. polycrystals: the result still lists every interface).
 
@@ -69,28 +69,43 @@ generate(f::Function, rve::RVE; kwargs...) = _generate_retry(f, rve; kwargs...)
 # Gmsh can fail to mesh matching periodic faces when tiny curved patches meet the cell faces
 # (e.g. rounded pores); the same periodic material translated by a small shift is cut by the
 # faces elsewhere and usually meshes.
-_periodic_failure(e) = e isa PeriodicityError ||
-    (e isa ErrorException && (occursin("eriodic", e.msg) || occursin("did not mesh the RVE completely", e.msg)))
+_periodic_failure(e) = e isa PeriodicityError || (e isa ErrorException && occursin("eriodic", e.msg))
 
 const _SHIFTS = ((0.0137, 0.0291, 0.0073), (0.0311, 0.0109, 0.0233), (0.0053, 0.0397, 0.0167))
 
+# an error of the do-block of the user: never retried
+struct _CallbackError <: Exception
+    e::Any
+end
+
+# tests only: number of next generate calls that fail as on unmatched periodic faces
+const _FORCED_FAILURES = Ref(0)
+
 function _generate_retry(f, rve::RVE{D}; retries::Integer=0, kwargs...) where {D}
-    retries >= 0 || throw(ArgumentError("retries must be >= 0"))
-    (retries == 0 || !any(rve.cell.periodic)) && return _generate(f, rve; kwargs...)
-    retries <= length(_SHIFTS) || throw(ArgumentError("retries must be at most $(length(_SHIFTS))"))
+    (retries isa Integer && !(retries isa Bool) && 0 <= retries <= length(_SHIFTS)) ||
+        throw(ArgumentError("retries must be an integer in 0:$(length(_SHIFTS)), got $(repr(retries))"))
+    (retries == 0 || !any(rve.cell.periodic) || (D == 3 && _is_tpms_rve(rve))) && return _generate(f, rve; kwargs...)
+    g = f === nothing ? nothing : (res -> try
+        f(res)
+    catch e
+        throw(_CallbackError(e))
+    end)
+    shift(k) = ntuple(d -> rve.cell.periodic[d] ? _SHIFTS[k][d] * rve.cell.size[d] : 0.0, D)
     err = nothing
     for k in 0:retries
-        r = rve
-        if k > 0
-            s = ntuple(d -> rve.cell.periodic[d] ? _SHIFTS[k][d] * rve.cell.size[d] : 0.0, D)
-            r = RVE{D}(rve.cell, [Phase{D}(p.name, Geometry{D}[Translate(g, s) for g in p.items], p.h, p.refine, p.fuse, p.void)
-                                  for p in rve.phases], rve.matrix, rve.tiling, rve.overlaps)
-        end
+        r = k == 0 ? rve :
+            RVE{D}(rve.cell, [Phase{D}(p.name, Geometry{D}[Translate(it, shift(k)) for it in p.items], p.h, p.refine, p.fuse, p.void)
+                              for p in rve.phases], rve.matrix, rve.tiling, rve.overlaps)
         try
-            res = _generate(f, r; kwargs...)
-            k > 0 && @warn "generate: Gmsh failed to mesh the periodic faces; meshed the same material shifted by $(round.(ntuple(d -> rve.cell.periodic[d] ? _SHIFTS[k][d] * rve.cell.size[d] : 0.0, D); sigdigits = 3))"
+            if _FORCED_FAILURES[] > 0
+                _FORCED_FAILURES[] -= 1
+                throw(PeriodicityError(1, "forced failure (tests)"))
+            end
+            res = _generate(g, r; kwargs...)
+            k > 0 && @warn "generate: Gmsh failed to mesh the periodic faces; meshed the same material shifted by $(round.(shift(k); sigdigits = 3)) (res.rve holds the shifted phases)"
             return res
         catch e
+            e isa _CallbackError && throw(e.e)
             _periodic_failure(e) || rethrow()
             err = e
         end

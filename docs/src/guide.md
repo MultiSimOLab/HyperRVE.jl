@@ -335,10 +335,12 @@ From a tessellation `t = voronoi(cell; n, rng)`:
   polyhedra; `1`: nearly spherical pores with thick nodes and edges and thin flat walls only
   where two pores meet). Give the density and the wall and solve the rounding,
   `r = pore_rounding(t, density; wall)`, or give the rounding and solve the wall,
-  `wall_thickness(t, density; rounding)`; the volumes are integrated numerically (about 1e-3
-  of the density). The ball radius is moved by up to 0.5 % away from tangency with pore and
-  cell features; Gmsh may still fail to match a periodic face in a few percent of the cells,
-  which `generate(...; retries = 3)` handles by meshing the same material shifted slightly;
+  `wall_thickness(t, density; rounding)`. The density is reached to a few 1e-3 with a few tens
+  of pores (about 2e-2 with only a few) (`volume_fraction` of the mesh gives the exact value): the ball radii are moved by
+  up to 0.5 % away from tangencies with pore and cell features. Gmsh may still fail to match a
+  periodic face in a few percent of the cells, which `generate(...; retries = 3)` handles by
+  meshing the same material shifted slightly. The thin walls between pores give low element
+  quality unless the walls are refined (e.g. `Phase(:walls, ...; refine = wall)`);
 - open cells: `foam_struts(t; radius)` are the edges as struts (short edges merged), for a
   fused phase: `RVE(cell, Phase(:foam, foam_struts(t; radius = 0.02); fuse = true); matrix = nothing)`
   (fully periodic tessellations; practical for about 5–20 cells). The geometry is exact, but
