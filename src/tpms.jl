@@ -553,3 +553,62 @@ function _tpms_level(kind, type, density, periods, resolution, what)
     _tpms_checked_surface(kind, type, c, n, n * res, what)
     return c, res
 end
+
+# ---------------------------------------------------------------- TPMS phase item
+
+"""
+    TPMS
+
+A triply periodic minimal surface solid filling a cubic cell, made by [`tpms`](@ref). It is
+meshed by its own (experimental) path, not by OpenCASCADE: it must be the only item of the only
+phase of the RVE.
+"""
+struct TPMS <: Geometry{3}
+    kind::Symbol
+    type::Symbol
+    level::Float64
+    periods::Int
+    resolution::Int
+end
+
+Base.show(io::IO, g::TPMS) = print(io, "TPMS(:", g.kind, ", :", g.type, ", level = ", round(g.level; sigdigits=6),
+                                   ", periods = ", g.periods, ", resolution = ", g.resolution, ")")
+
+"""
+    tpms(kind; type = :sheet, density = nothing, level = nothing, periods = 1, resolution = nothing) -> TPMS
+
+Experimental: a triply periodic minimal surface solid for a cubic periodic cell, with
+`periods` periods per side, `kind` one of `:gyroid`, `:schwarz_p`, `:diamond`, `:iwp`,
+`:neovius`, `type = :network` (solid `f ≤ level`) or `:sheet` (wall `|f| ≤ level`), and either
+the relative `density` (see [`tpms_level`](@ref)) or the `level`. `resolution` is the number of
+grid cubes per period of the triangulated surface (by default 24, raised for thin walls), which
+is meshed as it is (Gmsh fills the volumes): it sets the surface mesh size, `h` in
+[`generate`](@ref) only the size inside.
+
+The TPMS must be the only item of the only phase, with a matrix or `matrix = nothing`, in a
+cubic cell periodic in the three directions, without tiling (use `periods`), `h`, `refine`,
+`fuse`, `void` or order 2:
+
+```julia
+rve = RVE(Cell((1.0, 1.0, 1.0)), Phase(:gyroid, tpms(:gyroid; type = :sheet, density = 0.3)))
+res = generate(rve; output = "gyroid.msh")
+```
+
+The groups are the phases, `interface_<matrix>_<phase>` (or `interface_<phase>_void`), the faces
+`xmin` … `zmax`, `boundary`, `corners` and `corner_*` (no `edge_*` groups). The `\$Periodic`
+section of `.msh` files pairs every node of opposite faces.
+"""
+function tpms(kind::Symbol; type::Symbol=:sheet, density=nothing, level=nothing, periods=1, resolution=nothing)
+    (density === nothing) == (level === nothing) && throw(ArgumentError("tpms: give exactly one of density and level"))
+    n, _ = _tpms_args(kind, type, periods, resolution, "tpms")
+    if level === nothing
+        c, res = _tpms_level(kind, type, density, n, resolution, "tpms")
+    else
+        c = _tpms_check_level(kind, type, level, "tpms")
+        res = _tpms_resolution(kind, type, c, n, resolution)
+        type === :network && !_tpms_percolates(kind, type, c, n, n * res) &&
+            throw(ArgumentError("tpms: this $kind network does not connect across the cell (below its pinch-off)"))
+        _tpms_checked_surface(kind, type, c, n, n * res, "tpms")
+    end
+    return TPMS(kind, type, c, n, res)
+end

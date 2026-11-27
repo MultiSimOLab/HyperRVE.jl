@@ -28,6 +28,7 @@ include("helpers.jl")
     @testset "Plate lattices" begin include("test_plates.jl") end
     @testset "Hollow struts" begin include("test_hollow.jl") end
     @testset "TPMS kernel" begin include("test_tpms.jl") end
+    @testset "TPMS meshes" begin include("test_tpms_mesh.jl") end
     @testset "Particle chains" begin include("test_chains.jl") end
     @testset "Particle arrays and laminates" begin include("test_arrays.jl") end
     @testset "Auxetic 2D cells" begin include("test_auxetic.jl") end
