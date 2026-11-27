@@ -4,9 +4,15 @@
 
 _tpms_items(rve) = [it for p in rve.phases for it in p.items]
 
+_has_tpms(::Geometry) = false
+_has_tpms(::TPMS) = true
+_has_tpms(g::Union{Translate,Rotate,Scale}) = _has_tpms(g.child)
+_has_tpms(g::Union{Fuse,Intersect}) = any(_has_tpms, g.parts)
+_has_tpms(g::Cut) = _has_tpms(g.object) || any(_has_tpms, g.tools)
+
 function _is_tpms_rve(rve::RVE)
     items = _tpms_items(rve)
-    any(it -> it isa TPMS, items) || return false
+    any(_has_tpms, items) || return false
     msg = "TPMS phases are experimental and cannot be combined with other features: "
     (length(rve.phases) == 1 && length(items) == 1 && items[1] isa TPMS) ||
         throw(ArgumentError(msg * "the TPMS must be the only item of the only phase (a matrix or matrix = nothing)"))
@@ -86,19 +92,28 @@ function _tp_build!(S, matrix::Bool)
     for (t, l) in zip(S.tri, S.lab)
         keep(l) && (used[collect(t)] .= true)
     end
+    onb(x) = abs(x) < 1e-12 || abs(x - 1) < 1e-12
+    oniface = falses(length(S.P))
+    for (t, l) in zip(S.tri, S.lab)
+        l == 0 && (oniface[collect(t)] .= true)
+    end
+    # points: the cell corners, and the nodes where the interface meets a cell edge (so that the
+    # interface groups are closed sets, as in the OCC path)
     corners = Dict{NTuple{3,Int},Int}()
+    points = Dict{Int,Int}()                               # kernel node -> point entity
     for (p, x) in enumerate(S.P)
         used[p] || continue
-        all(c -> abs(c) < 1e-12 || abs(c - 1) < 1e-12, x) || continue
+        nb = count(onb, x)
+        (nb == 3 || (nb == 2 && oniface[p])) || continue
         t = model.addDiscreteEntity(0)
         gmsh.model.mesh.addNodes(0, t, [p], collect(x))
         push!(added, (0, t, [p]))
         owned[p] = true
-        corners[round.(Int, x)] = t
+        points[p] = t
+        nb == 3 && (corners[round.(Int, x)] = t)
     end
     # cell edges: (axis a, fixed values of the other two coordinates) -> discrete curve with the
     # triangle edges that lie on it
-    onb(x) = abs(x) < 1e-12 || abs(x - 1) < 1e-12
     segs = Dict{Tuple{Int,NTuple{2,Int}},Set{NTuple{2,Int}}}()
     for (t, l) in zip(S.tri, S.lab), m in 1:3
         keep(l) || continue
@@ -118,6 +133,27 @@ function _tp_build!(S, matrix::Bool)
         sg = sort!(collect(segs[k]))
         nodes = unique(Iterators.flatten(sg))
         new = [p for p in nodes if !owned[p]]
+        owned[new] .= true
+        isempty(new) || gmsh.model.mesh.addNodes(1, t, new, collect(Iterators.flatten(S.P[p] for p in new)))
+        push!(added, (1, t, new))
+        gmsh.model.mesh.addElementsByType(t, 1, Int[], collect(Iterators.flatten(sg)))
+    end
+    # interface ∩ cell faces: one discrete curve per face with the interface triangle edges on it
+    fsegs = Dict{Int,Set{NTuple{2,Int}}}()
+    for (t, l) in zip(S.tri, S.lab), m in 1:3
+        l == 0 || continue
+        a, b = t[m], t[mod1(m + 1, 3)]
+        for d in 1:3, side in 0:1
+            abs(S.P[a][d] - side) < 1e-12 && abs(S.P[b][d] - side) < 1e-12 &&
+                push!(get!(fsegs, 2d - 1 + side, Set{NTuple{2,Int}}()), minmax(a, b))
+        end
+    end
+    fcurves = Dict{Int,Int}()
+    for f in sort!(collect(keys(fsegs)))
+        t = model.addDiscreteEntity(1)
+        fcurves[f] = t
+        sg = sort!(collect(fsegs[f]))
+        new = [p for p in unique(Iterators.flatten(sg)) if !owned[p]]
         owned[new] .= true
         isempty(new) || gmsh.model.mesh.addNodes(1, t, new, collect(Iterators.flatten(S.P[p] for p in new)))
         push!(added, (1, t, new))
@@ -148,7 +184,9 @@ function _tp_build!(S, matrix::Bool)
         for c in 1:nc
             vc[c] > 0 && continue
             p = S.P[S.tri[tris[c][1]][1]]
-            host = length(outer) == 1 ? outer[1] : first(o for o in outer if _tp_inside(S, p, tris[o]))
+            hosts = length(outer) == 1 ? outer : [o for o in outer if _tp_inside(S, p, tris[o])]
+            isempty(hosts) && error("TPMS: a cavity of the surface lies in no closed shell; try another resolution or level")
+            host = first(hosts)
             push!(loops[host], loopof(c))
         end
         for c in outer
@@ -156,13 +194,13 @@ function _tp_build!(S, matrix::Bool)
         end
     end
     model.geo.synchronize()
-    return vols, surf, corners, groups, added, edges
+    return vols, surf, corners, groups, added, edges, fcurves, points
 end
 
 # $Periodic section, as Gmsh writes it: every node is a slave once, in the link of the entity that
 # owns it (corner points, cell-edge curves, cap patches), paired with its translate; nodes on
 # several max faces are chained through the lower directions
-function _tp_periodic_links(S, surf, groups, corners, edges, added)
+function _tp_periodic_links(S, surf, points, edges, fcurves, added)
     q(x) = round.(Int, x .* 1e9)
     at = Dict(q(x) => p for (p, x) in enumerate(S.P))
     owner = Dict{Int,Tuple{Int,Int}}()
@@ -184,15 +222,18 @@ function _tp_periodic_links(S, surf, groups, corners, edges, added)
         isempty(pairs) && return
         push!(links, (dim, d, ent, argmax(x -> count(==(x), ms), unique(ms)), pairs))
     end
-    for (c, t) in sort!(collect(corners))
-        d = findfirst(==(1), c)
-        d === nothing || link!(0, t, d, [only(ks) for (dim, e, ks) in added if dim == 0 && e == t])
+    for (p, t) in sort!(collect(points))
+        d = findfirst(x -> abs(x - 1) < 1e-12, S.P[p])
+        d === nothing || link!(0, t, d, [p])
     end
     for ((ax, v), t) in sort!(collect(edges))
         o = [i for i in 1:3 if i != ax]
         k = findfirst(==(1), v)
         k === nothing && continue
         link!(1, t, o[k], [p for (dim, e, ks) in added if dim == 1 && e == t for p in ks])
+    end
+    for (f, t) in sort!(collect(fcurves))
+        iseven(f) && link!(1, t, f ÷ 2, [p for (dim, e, ks) in added if dim == 1 && e == t for p in ks])
     end
     for (k, t) in sort!(collect(surf))
         k[1] == 0 && continue
@@ -202,6 +243,9 @@ function _tp_periodic_links(S, surf, groups, corners, edges, added)
     end
     return links
 end
+
+# periodic links of the live TPMS models, for write_mesh
+const _TP_LINKS = Dict{String,Any}()
 
 function _tp_write_periodic!(path, links)
     any(e -> endswith(lowercase(path), e), (".msh", ".msh4")) || return nothing
@@ -242,7 +286,13 @@ function _generate_tpms(f, rve::RVE{3}; h=nothing, mesh::MeshOptions=MeshOptions
     files = output === nothing ? String[] : output isa AbstractString ? [abspath(output)] : [abspath(String(o)) for o in output]
     for p in files
         isdir(dirname(p)) || throw(ArgumentError("output directory $(dirname(p)) does not exist"))
+        any(e -> endswith(lowercase(p), e), (".msh", ".msh4")) ||
+            @warn "generate: the periodic node pairs of a TPMS mesh are written only to .msh files (MSH 4.1); $p has none"
     end
+    geometry_only && !isempty(files) && (@warn "generate: geometry_only = true, no file is written for a TPMS phase"; files = String[])
+    d0 = MeshOptions()
+    ignored = [f for f in fieldnames(MeshOptions) if !(f in (:h, :order)) && getfield(mesh, f) != getfield(d0, f)]
+    isempty(ignored) || @warn "generate: a TPMS mesh uses only h of the MeshOptions; ignored: $(join(ignored, ", "))"
     g = only(_tpms_items(rve))
     N = g.periods * g.resolution
     S = _tpms_checked_surface(g.kind, g.type, g.level, g.periods, N, "generate")
@@ -265,7 +315,7 @@ function _generate_tpms(f, rve::RVE{3}; h=nothing, mesh::MeshOptions=MeshOptions
         if geometry_only
             push!(infos, InterfaceInfo(iname, matrix ? (rve.matrix, pname) : (pname, "void"), 0, Int[], iarea))
         else
-            vols, surf, corners, tgroups, added, cedges = _tp_build!(S, matrix)
+            vols, surf, corners, tgroups, added, cedges, fcurves, points = _tp_build!(S, matrix)
             ents = matrix ? [Int32.(vols[2]), Int32.(vols[1])] : [Int32.(vols[1])]
             tags = matrix ? [1, 2] : [2]
             for (n, t, e) in zip(names, tags, ents)
@@ -276,14 +326,14 @@ function _generate_tpms(f, rve::RVE{3}; h=nothing, mesh::MeshOptions=MeshOptions
             for d in 1:3, side in 1:2
                 fc = _face_tag(d, side)
                 _add_group!(groups, 2, caps(==(fc)), fc, _face_name(d, side))
-                _add_group!(groups, 1, [t for ((ax, v), t) in cedges if ax != d && v[findfirst(==(d), [i for i in 1:3 if i != ax])] == side - 1],
-                            fc, _face_name(d, side))
-                _add_group!(groups, 0, [t for (c, t) in corners if c[d] == side - 1], fc, _face_name(d, side))
+                _add_group!(groups, 1, [[t for ((ax, v), t) in cedges if ax != d && v[findfirst(==(d), [i for i in 1:3 if i != ax])] == side - 1];
+                                        [t for (f, t) in fcurves if f == fc]], fc, _face_name(d, side))
+                _add_group!(groups, 0, [t for (p, t) in points if abs(S.P[p][d] - (side - 1)) < 1e-12], fc, _face_name(d, side))
             end
             _add_group!(groups, 0, collect(values(corners)), 7, "corners")
             _add_group!(groups, 2, caps(_ -> true), 8, "boundary")
-            _add_group!(groups, 1, collect(values(cedges)), 8, "boundary")
-            _add_group!(groups, 0, collect(values(corners)), 8, "boundary")
+            _add_group!(groups, 1, [collect(values(cedges)); collect(values(fcurves))], 8, "boundary")
+            _add_group!(groups, 0, collect(values(points)), 8, "boundary")
             etag = 11
             for a in 1:3
                 d1, d2 = Tuple(setdiff(1:3, a))
@@ -291,7 +341,7 @@ function _generate_tpms(f, rve::RVE{3}; h=nothing, mesh::MeshOptions=MeshOptions
                     k = (a, (s1 - 1, s2 - 1))
                     nm = "edge_" * _face_name(d1, s1) * "_" * _face_name(d2, s2)
                     haskey(cedges, k) && _add_group!(groups, 1, [cedges[k]], etag, nm)
-                    _add_group!(groups, 0, [t for (c, t) in corners if c[d1] == s1 - 1 && c[d2] == s2 - 1], etag, nm)
+                    _add_group!(groups, 0, [t for (p, t) in points if abs(S.P[p][d1] - (s1 - 1)) < 1e-12 && abs(S.P[p][d2] - (s2 - 1)) < 1e-12], etag, nm)
                     etag += 1
                 end
             end
@@ -303,20 +353,30 @@ function _generate_tpms(f, rve::RVE{3}; h=nothing, mesh::MeshOptions=MeshOptions
                 tag += 1
             end
             isurf = [s for (k, s) in surf if k[1] == 0]
-            interfaces === true && _add_group!(groups, 2, isurf, 102, iname)
-            interfaces !== false && _add_group!(groups, 2, isurf, 99, "interfaces")
+            ifn = Set(p for (t, l) in zip(S.tri, S.lab) if l == 0 for p in t)
+            ipts = [t for (p, t) in points if p in ifn]
+            for (dim, ents) in ((2, isurf), (1, collect(values(fcurves))), (0, ipts))
+                interfaces === true && _add_group!(groups, dim, ents, 102, iname)
+                interfaces !== false && _add_group!(groups, dim, ents, 99, "interfaces")
+            end
             push!(infos, InterfaceInfo(iname, matrix ? (rve.matrix, pname) : (pname, "void"), interfaces === true ? 102 : 0, isurf, iarea))
             gmsh.option.setNumber("Mesh.MeshSizeMax", mesh.h === nothing ? 1 / N : to_frame_length(frame, mesh.h))
             gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 1)
             gmsh.option.setNumber("Mesh.Optimize", 1)
-            gmsh.model.mesh.generate(3)
+            try
+                gmsh.model.mesh.generate(3)
+            catch e
+                error("TPMS: Gmsh could not fill the volumes of the surface ($(sprint(showerror, e))); try another resolution or level")
+            end
             # Gmsh renumbers the nodes when meshing: the nodes of each entity keep their order
-            links = _tp_periodic_links(S, surf, tgroups, corners, cedges, added)
+            links = _tp_periodic_links(S, surf, points, cedges, fcurves, added)
             tagof = Dict{Int,Int}()
             for (dim, e, ks) in added
                 nt = gmsh.model.mesh.getNodes(dim, e, false, false)[1]
                 length(nt) == length(ks) || error("TPMS: Gmsh changed the surface nodes of entity $e")
                 for (k, t) in zip(ks, nt)
+                    x = gmsh.model.mesh.getNode(t)[1]
+                    maximum(abs.(x .- S.P[k])) < 1e-9 || error("TPMS: Gmsh reordered the surface nodes of entity $e")
                     tagof[k] = Int(t)
                 end
             end
@@ -325,6 +385,9 @@ function _generate_tpms(f, rve::RVE{3}; h=nothing, mesh::MeshOptions=MeshOptions
             restore_frame!(frame)
             part = Partition(3, names, tags, ents, Dict{Int32,Tuple{Int,Int}}())
             stats = mesh_stats(frame, mesh, part)
+            stats.min_quality < 0.02 &&
+                @warn "generate: poor element quality (minimum SICN $(round(stats.min_quality; sigdigits=2))) in phase " *
+                      "$(stats.worst_phase) near $(round.(stats.worst_point; sigdigits=4)); for a TPMS phase raise the resolution of tpms"
             check_completeness(frame, part, phases, mesh)
             # the mesh is the kernel's solid: its volumes must match
             for (n, e, ph) in zip(names, ents, phases)
@@ -336,6 +399,7 @@ function _generate_tpms(f, rve::RVE{3}; h=nothing, mesh::MeshOptions=MeshOptions
                                                           "the surface could not be meshed as it is (try another resolution or level)")
             end
             check_periodicity && (checks = verify_periodicity(rve, frame))
+            _TP_LINKS[model] = links
             for p in files
                 gmsh.write(p)
                 _tp_write_periodic!(p, links)
@@ -346,6 +410,7 @@ function _generate_tpms(f, rve::RVE{3}; h=nothing, mesh::MeshOptions=MeshOptions
         verbosity >= 1 && @info sprint(show, MIME("text/plain"), res)
         f === nothing || f(res)
         view && _run_gui()
+        keep_open || delete!(_TP_LINKS, model)
         res
     end
 end

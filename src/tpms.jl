@@ -594,9 +594,11 @@ rve = RVE(Cell((1.0, 1.0, 1.0)), Phase(:gyroid, tpms(:gyroid; type = :sheet, den
 res = generate(rve; output = "gyroid.msh")
 ```
 
-The groups are the phases, `interface_<matrix>_<phase>` (or `interface_<phase>_void`), the faces
-`xmin` … `zmax`, `boundary`, `corners` and `corner_*` (no `edge_*` groups). The `\$Periodic`
-section of `.msh` files pairs every node of opposite faces.
+The groups are those of other RVEs: the phases, `interface_<matrix>_<phase>` (or
+`interface_<phase>_void`, closed: with its curves and points on the faces), the faces `xmin` …
+`zmax`, `boundary`, `corners`, `corner_*` and `edge_*`. The `\$Periodic` section of `.msh` files
+(MSH 4.1, also with [`write_mesh`](@ref)) pairs every node of opposite faces; GridapGmsh reads it.
+Only `h` of the mesh options is used.
 """
 function tpms(kind::Symbol; type::Symbol=:sheet, density=nothing, level=nothing, periods=1, resolution=nothing)
     (density === nothing) == (level === nothing) && throw(ArgumentError("tpms: give exactly one of density and level"))

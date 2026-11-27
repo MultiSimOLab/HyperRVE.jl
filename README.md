@@ -52,6 +52,7 @@ can be read directly with GridapGmsh.
 <td align="center"><img src="docs/imgs/gallery/fibres_hybrid.png" width="180"><br>particles + short fibres</td>
 <td align="center"><img src="docs/imgs/gallery/plates_sc_fcc.png" width="180"><br>SC + FCC plates (cut)</td>
 <td align="center"><img src="docs/imgs/gallery/plates_bcc.png" width="180"><br>BCC plates (cut)</td>
+<td align="center"><img src="docs/imgs/gallery/gyroid.png" width="180"><br>gyroid sheet (TPMS, experimental)</td>
 </tr>
 </table>
 

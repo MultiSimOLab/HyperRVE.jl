@@ -29,6 +29,12 @@ function periodic_pairs_ok(path, L)
         end
         k += np
     end
+    # complete: every boundary node but one per periodic class is a slave
+    o = minimum(first, values(X)), minimum(x -> x[2], values(X)), minimum(x -> x[3], values(X))
+    rel(x) = (x .- o) ./ L
+    bnd = [rel(x) for x in values(X) if any(c -> abs(c) < 1e-9 || abs(c - 1) < 1e-9, rel(x))]
+    classes = length(unique(map(x -> round.(Int, mod.(x, 1.0) .% 1.0 .* 1e7), bnd)))
+    ok &= tot == length(bnd) - classes
     return ok, tot
 end
 
@@ -76,3 +82,41 @@ end
     @test_throws ArgumentError tpms(:gyroid; type=:sheet)
     @test_throws ArgumentError tpms(:gyroid; type=:sheet, density=0.3, level=0.4)
 end
+
+@testset "TPMS review fixes" begin
+    c = unitcell()
+    g = tpms(:gyroid; type=:sheet, density=0.3)
+    # write_mesh keeps the periodic section; complete: nodes − pairs = periodic classes
+    out1, out2 = joinpath(OUTDIR, "g1.msh"), joinpath(OUTDIR, "g2.msh")
+    generate(RVE(c, Phase(:gyroid, g)); output=out1) do res
+        write_mesh(res, out2)
+    end
+    @test periodic_pairs_ok(out1, 1.0) == periodic_pairs_ok(out2, 1.0)
+    @test first(periodic_pairs_ok(out2, 1.0))
+    # closed interface groups: the nodes of the interface on the faces are in the group
+    generate(RVE(c, Phase(:gyroid, g))) do res
+        tag = only(t for (d, t) in gmsh.model.getPhysicalGroups(2) if gmsh.model.getPhysicalName(d, t) == "interface_matrix_gyroid")
+        n2 = Set(gmsh.model.mesh.getNodesForPhysicalGroup(2, tag)[1])
+        nall = Set(Int[])
+        for e in gmsh.model.getEntitiesForPhysicalGroup(2, tag)
+            _, _, en = gmsh.model.mesh.getElements(2, e)
+            foreach(x -> union!(nall, x), en)
+        end
+        @test nall ⊆ n2
+        @test any(d -> d == 1, first.(gmsh.model.getPhysicalGroups(1)) .* (gmsh.model.getPhysicalName.(1, last.(gmsh.model.getPhysicalGroups(1))) .== "interface_matrix_gyroid"))
+    end
+    # other kinds with a matrix; interfaces = false
+    d = tpms(:diamond; type=:network, density=0.4)
+    res = generate(RVE(c, Phase(:d, d)); interfaces=false)
+    @test all(x -> x.ok && x.npairs > 0, res.periodicity)
+    @test !("interface_matrix_d" in group_names(res))
+    @test volume_fraction(res, :d) ≈ 0.4 atol = 2e-3
+    # wrapped TPMS and other phase options
+    @test_throws ArgumentError generate(RVE(c, Phase(:p, Translate(d, (0.1, 0.0, 0.0)))))
+    @test_throws ArgumentError generate(RVE(c, Phase(:p, d; fuse=true)))
+    @test_throws ArgumentError generate(RVE(c, Phase(:p, d; h=0.05)))
+    # geometry only with output: warning, no file
+    @test_logs (:warn, r"geometry_only") match_mode = :any generate(RVE(c, Phase(:d, d)); geometry_only=true, output=joinpath(OUTDIR, "none.msh"))
+    @test !isfile(joinpath(OUTDIR, "none.msh"))
+end
+
