@@ -117,10 +117,22 @@ function _shrunk(t::Tessellation{D}, i, w) where {D}
     return P
 end
 
-# the weld tolerance is relative to the size of the body (cell-local coordinates, about the cell size)
+# volume of a convex clipping polyhedron: pyramids from an interior point to every face (no
+# connectivity needed, so nearly degenerate faces left by the clipping are harmless)
 function _poly_volume(P::_Poly3)
-    sc = maximum(p -> maximum(abs, p), _vertices(P))
-    return abs(_polyhedron_volume(_indexed(P, 1e-12 * sc)...))
+    isempty(P.faces) && return 0.0
+    vs = _vertices(P)
+    c = reduce(.+, vs) ./ length(vs)
+    vol = 0.0
+    for f in P.faces
+        length(f) >= 3 || continue
+        a = (0.0, 0.0, 0.0)
+        for k in 2:length(f)-1
+            a = a .+ _cross(f[k] .- f[1], f[k+1] .- f[1])
+        end
+        vol += abs(_dot(a, f[1] .- c)) / 6
+    end
+    return vol
 end
 _poly_volume(P::_Poly2) = abs(_polygon_area(P.pts))
 
