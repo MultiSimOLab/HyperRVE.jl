@@ -47,20 +47,15 @@ end
 end
 
 @testset "TPMS review fixes" begin
-    # degenerate levels and pinch-prone densities: a valid surface or an error, never silence
-    for (kind, type, args) in ((:gyroid, :network, (level=0.0,)), (:diamond, :network, (level=0.0,)),
-                               (:gyroid, :sheet, (density=0.65,)), (:gyroid, :network, (density=0.175,)))
-        try
-            c = haskey(args, :level) ? args.level : tpms_level(kind; type, density=args.density)
-            res = TP._tpms_resolution(kind, type, c, 1, nothing)
-            S = TP._tpms_valid_surface(kind, type, c, 1, res)
-            @test S !== nothing
-            haskey(args, :density) && @test TP._tp_solid_volume(S) ≈ args.density atol = 1e-3
-        catch e
-            @test e isa ArgumentError
-        end
+    # degenerate levels and pinch-prone densities: valid surfaces with the requested density
+    for (kind, type, ρ) in ((:gyroid, :sheet, 0.65), (:gyroid, :network, 0.5))
+        c, res = TP._tpms_level(kind, type, ρ, 1, nothing, "test")
+        S = TP._tpms_valid_surface(kind, type, c, 1, res)
+        @test S !== nothing
+        @test TP._tp_solid_volume(S) ≈ ρ atol = 2e-4
+        @test tpms_density(kind; type, level=c) ≈ ρ atol = 2e-4
     end
-    @test tpms_level(:gyroid; type=:network, density=0.5) isa Float64
+    @test tpms_density(:diamond; type=:network, level=0.0) ≈ 0.5 atol = 2e-3
     # IWP and Neovius; two periods
     @test tpms_density(:iwp; type=:network, level=tpms_level(:iwp; type=:network, density=0.3)) ≈ 0.3 atol = 1e-3
     @test tpms_density(:neovius; type=:sheet, level=tpms_level(:neovius; type=:sheet, density=0.5)) ≈ 0.5 atol = 1e-3

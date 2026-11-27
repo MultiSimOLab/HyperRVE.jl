@@ -354,6 +354,7 @@ function _tp_defects(S, F)
         a, b, c = S.P[t[1]], S.P[t[2]], S.P[t[3]]
         nrm = _tp_nrm(a, b, c)
         if l == 0
+            _tp_minang(a, b, c) < 1.0 && (bad += 1)      # needles (degenerate levels)
             m = (a .+ b .+ c) ./ 3
             g = ntuple(d -> (F(ntuple(i -> m[i] + (i == d ? δ : 0.0), 3)) - F(ntuple(i -> m[i] - (i == d ? δ : 0.0), 3))) / 2δ, 3)
             sum(nrm .* g) > 0 || (bad += 1)
@@ -453,15 +454,27 @@ function _tpms_checked_surface(kind, type, level, n, N, what)
 end
 _tp_cells(S, N) = (V = _tp_solid_volume(S); 2 * min(V, 1 - V) / _tp_area(S) * N)
 
-# resolution: the given one, or 24 cubes per period raised until the walls are 2.5 cubes thick
+# resolution: the given one, or the first of 24, 28, 32, 40, 48, 56, 64 cubes per period with a
+# valid surface whose walls are at least 2.5 cubes thick (64 if none)
+const _TP_LADDER = (24, 28, 32, 40, 48, 56, 64)
 function _tpms_resolution(kind, type, level, n, resolution)
     resolution === nothing || return resolution
-    res = 24
-    S = _tpms_valid_surface(kind, type, level, n, n * res)
-    S === nothing && return res
-    c = _tp_cells(S, n * res)
-    isfinite(c) && c > 0 || return 64
-    return c >= 2.5 ? res : min(64, ceil(Int, res * 2.6 / c))
+    for res in _TP_LADDER
+        S = _tpms_valid_surface(kind, type, level, n, n * res)
+        S === nothing && continue
+        c = _tp_cells(S, n * res)
+        isfinite(c) && c >= 2.5 && return res
+    end
+    return last(_TP_LADDER)
+end
+
+# first guess of the resolution for a density: walls of 2.5 cubes with the area of the minimal
+# surface per period (two surfaces for a sheet)
+const _TP_AREA = Dict(:gyroid => 3.09, :schwarz_p => 2.35, :diamond => 3.84, :iwp => 3.5, :neovius => 3.9)
+function _tpms_guess_resolution(kind, type, density)
+    w = 2 * min(density, 1 - density)
+    r = 2.6 * _TP_AREA[kind] * (type === :sheet ? 2 : 1) / w
+    return something(findfirst(>=(r), _TP_LADDER) |> i -> i === nothing ? nothing : _TP_LADDER[i], last(_TP_LADDER))
 end
 
 function _tpms_check_level(kind, type, level, what)
@@ -507,49 +520,36 @@ function _tpms_level(kind, type, density, periods, resolution, what)
     n, _ = _tpms_args(kind, type, periods, resolution, what)
     density isa Real && 0 < density < 1 || throw(ArgumentError("$what: density must be in (0, 1)"))
     lo, hi = _tpms_level_range(kind, type)
+    # volume of the surface that is used (the valid variant when there is one)
+    function vol(c, N)
+        S = _tpms_valid_surface(kind, type, c, n, N)
+        S === nothing && (S = first(_tpms_surface(kind, type, c, n, N)))
+        return _tp_solid_volume(S)
+    end
     function bisect(N)
         a, b = lo + 1e-3, hi - 1e-3
-        a0 = a
         c, v = a, NaN
-        # start off-centre: level 0 is a degenerate surface for some kinds
-        frac = 0.5 + 1 / (2π * 7)
+        frac = 0.5 + 1 / (2π * 7)          # off-centre start: level 0 is degenerate for some kinds
         for _ in 1:60
             c = a + frac * (b - a)
-            v = _tp_solid_volume(first(_tpms_surface(kind, type, c, n, N)))
+            v = vol(c, N)
             (abs(v - density) < 1e-4 || b - a < 1e-9 * (hi - lo)) && break
             v < density ? (a = c) : (b = c)
             frac = 0.5
         end
-        abs(v - density) < 1e-3 || throw(ArgumentError("$what: density $density is not reachable for a $kind $type " *
-                                                       "at this resolution (walls too thin for the grid)"))
-        return c
+        return c, v
     end
-    res = resolution === nothing ? 24 : resolution
-    c = try
-        bisect(n * res)
-    catch e
-        # thin walls at the default resolution: try a finer grid
-        (e isa ArgumentError && resolution === nothing) || rethrow()
-        res = 40
-        bisect(n * res)
-    end
+    res = resolution === nothing ? _tpms_guess_resolution(kind, type, density) : resolution
+    c, v = bisect(n * res)
     if resolution === nothing
+        # the resolution rule of tpms_density for this level, so that both agree
         r2 = _tpms_resolution(kind, type, c, n, nothing)
-        r2 != res && (res = r2; c = bisect(n * res))
+        r2 != res && ((c, v) = bisect(n * r2); res = r2)
     end
+    abs(v - density) < 1e-3 || throw(ArgumentError("$what: density $density is not reachable for a $kind $type " *
+                                                   "at $res cubes per period (walls too thin for the grid); give a larger resolution"))
     type === :network && !_tpms_percolates(kind, type, c, n, n * res) &&
         throw(ArgumentError("$what: a $kind network of density $density does not connect across the cell (below its pinch-off); raise the density"))
-    # a level whose surface is degenerate: the nearest valid level with the same density (to 1e-3)
-    S = _tpms_valid_surface(kind, type, c, n, n * res)
-    if S === nothing
-        δ = 1e-3 * (hi - lo)
-        for k in 1:6, sg in (1, -1)
-            c2 = c + sg * k * δ
-            S2 = _tpms_valid_surface(kind, type, c2, n, n * res)
-            S2 === nothing && continue
-            abs(_tp_solid_volume(S2) - density) < 1e-3 && (c = c2; S = S2; break)
-        end
-    end
     _tpms_checked_surface(kind, type, c, n, n * res, what)
     return c, res
 end
