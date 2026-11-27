@@ -3,7 +3,8 @@
 const TP = HyperRVE
 @testset "TPMS surfaces" begin
     for (kind, type, level) in ((:gyroid, :sheet, 0.46), (:schwarz_p, :network, -0.7), (:diamond, :network, -0.3))
-        S = TP._tpms_surface(kind, type, level, 1, 24)
+        S, F = TP._tpms_surface(kind, type, level, 1, 24)
+        @test TP._tp_defects(S, F) == 0
         @test TP._tp_watertight(S, 0:6) && TP._tp_watertight(S, (0, 7:12...))
         # solid and complement fill the cell
         @test TP._tp_solid_volume(S) + TP._tp_signed_volume(S, (7:12...,)) - TP._tp_signed_volume(S, 0:0) ≈ 1 atol = 1e-12
@@ -31,6 +32,7 @@ end
     # percolation of the network
     @test TP._tpms_percolates(:schwarz_p, :network, -0.7, 1, 24)
     @test !TP._tpms_percolates(:schwarz_p, :network, -1.1, 1, 24)
+    @test !TP._tpms_percolates(:schwarz_p, :network, -1.0, 1, 24)
 end
 
 @testset "TPMS errors" begin
@@ -43,3 +45,35 @@ end
     @test_throws ArgumentError tpms_level(:gyroid; density=0.3, periods=0)
     @test_throws ArgumentError tpms_level(:gyroid; density=0.3, resolution=4)
 end
+
+@testset "TPMS review fixes" begin
+    # degenerate levels and pinch-prone densities: a valid surface or an error, never silence
+    for (kind, type, args) in ((:gyroid, :network, (level=0.0,)), (:diamond, :network, (level=0.0,)),
+                               (:gyroid, :sheet, (density=0.65,)), (:gyroid, :network, (density=0.175,)))
+        try
+            c = haskey(args, :level) ? args.level : tpms_level(kind; type, density=args.density)
+            res = TP._tpms_resolution(kind, type, c, 1, nothing)
+            S = TP._tpms_valid_surface(kind, type, c, 1, res)
+            @test S !== nothing
+            haskey(args, :density) && @test TP._tp_solid_volume(S) ≈ args.density atol = 1e-3
+        catch e
+            @test e isa ArgumentError
+        end
+    end
+    @test tpms_level(:gyroid; type=:network, density=0.5) isa Float64
+    # IWP and Neovius; two periods
+    @test tpms_density(:iwp; type=:network, level=tpms_level(:iwp; type=:network, density=0.3)) ≈ 0.3 atol = 1e-3
+    @test tpms_density(:neovius; type=:sheet, level=tpms_level(:neovius; type=:sheet, density=0.5)) ≈ 0.5 atol = 1e-3
+    # adaptive resolution: thin sheets get a finer grid instead of an error
+    @test TP._tpms_resolution(:diamond, :sheet, 0.3647, 1, nothing) > 24
+    # levels out of range and disconnected networks in tpms_density
+    @test_throws ArgumentError tpms_density(:gyroid; type=:network, level=2.0)
+    @test_throws ArgumentError tpms_density(:gyroid; type=:network, level=-2.0)
+    @test_throws ArgumentError tpms_density(:iwp; type=:sheet, level=5.0)
+    @test_throws ArgumentError tpms_density(:schwarz_p; type=:network, level=-1.1)
+    # a bar along the diagonal is not a network across the cell
+    TP._TPMS_F[:diagonal_bar] = (x, y, z) -> -(cos(x - y) + cos(y - z) + cos(z - x))
+    @test !TP._tpms_percolates(:diagonal_bar, :network, -2.5, 1, 24)
+    delete!(TP._TPMS_F, :diagonal_bar)
+end
+

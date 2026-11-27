@@ -11,11 +11,11 @@ const _TPMS_F = Dict{Symbol,Function}(
     :neovius => (x, y, z) -> 3 * (cos(x) + cos(y) + cos(z)) + 4 * cos(x) * cos(y) * cos(z))
 
 # F < 0 is the solid. kind = :network (f < level) or :sheet (|f| < level)
-function _tp_levelfun(name, kind, level, n)
+function _tp_levelfun(name, kind, level, n, shift=0.0)
     f = _TPMS_F[name]
     w = 2π * n
-    kind == :network ? (p -> f(w * p[1], w * p[2], w * p[3]) - level) :
-                       (p -> abs(f(w * p[1], w * p[2], w * p[3])) - level)
+    kind == :network ? (p -> f(w * (p[1] + shift), w * (p[2] + shift), w * (p[3] + shift)) - level) :
+                       (p -> abs(f(w * (p[1] + shift), w * (p[2] + shift), w * (p[3] + shift))) - level)
 end
 
 const _TP_IFACE = 0x40
@@ -341,26 +341,89 @@ function _tpms_range(kind)
     return minimum(vals), maximum(vals)
 end
 
-# marched, smoothed and flipped surface of the solid in the unit cube (periodic in the three directions)
-function _tpms_surface(kind, type, level, n, N)
-    F = _tp_levelfun(kind, type, level, n)
-    S, ids = _tp_march(F, N; snap=0.25)
+# marched, smoothed and flipped surface of the solid in the unit cube (periodic in the three
+# directions); shift translates the level-set function (a fraction of the cell)
+function _tpms_surface(kind, type, level, n, N; snap=0.25, shift=0.0)
+    F = _tp_levelfun(kind, type, level, n, shift)
+    S, ids = _tp_march(F, N; snap=snap)
     for _ in 1:3
         _tp_smooth!(S, F, ids; iters=5); _tp_flip!(S)
     end
     _tp_smooth!(S, F, ids; iters=5)
-    return S
+    return S, F
 end
 
-# true if the solid grid nodes (F < 0) form a component that wraps around the three periodic directions
+# defects that the watertightness check does not see: vertices with more than one fan of triangles
+# (pinched surface) and folded triangles (interface against the gradient, caps against the face)
+function _tp_defects(S, F)
+    bad = 0
+    δ = 1e-7
+    for (t, l) in zip(S.tri, S.lab)
+        a, b, c = S.P[t[1]], S.P[t[2]], S.P[t[3]]
+        nrm = _tp_nrm(a, b, c)
+        if l == 0
+            m = (a .+ b .+ c) ./ 3
+            g = ntuple(d -> (F(ntuple(i -> m[i] + (i == d ? δ : 0.0), 3)) - F(ntuple(i -> m[i] - (i == d ? δ : 0.0), 3))) / 2δ, 3)
+            sum(nrm .* g) > 0 || (bad += 1)
+        else
+            f = mod1(l, 6); d = (f + 1) ÷ 2
+            nrm[d] * (isodd(f) ? -1 : 1) > 0 || (bad += 1)
+        end
+    end
+    for (labs, flip) in ((0:6, false), ((0, 7:12...), true))
+        opp = Dict{Int,Vector{NTuple{2,Int}}}()
+        for (t0, l) in zip(S.tri, S.lab), m in 1:3
+            l in labs || continue
+            # the interface is oriented outwards of the solid: reverse it for the complement
+            t = flip && l == 0 ? (t0[1], t0[3], t0[2]) : t0
+            push!(get!(opp, t[m], NTuple{2,Int}[]), (t[mod1(m + 1, 3)], t[mod1(m + 2, 3)]))
+        end
+        for (_, es) in opp                        # the opposite edges of one fan form a single cycle
+            nxt = Dict(a => b for (a, b) in es)
+            length(nxt) == length(es) || (bad += 1; continue)
+            x = es[1][1]; k = 0
+            while true
+                x = get(nxt, x, 0); k += 1
+                (x == es[1][1] || x == 0 || k > length(es)) && break
+            end
+            (x == es[1][1] && k == length(es)) || (bad += 1)
+        end
+    end
+    return bad
+end
+
+# a closed surface without defects: the default construction, then a translated grid and weaker
+# snapping (nodes of the grid on the surface give pinched or degenerate facets)
+function _tpms_valid_surface(kind, type, level, n, N)
+    for snap in (0.25, 0.1, 0.0), shift in (0.0, 0.37 / N)
+        S, F = _tpms_surface(kind, type, level, n, N; snap, shift)
+        _tp_watertight(S, 0:6) && _tp_watertight(S, (0, 7:12...)) && _tp_defects(S, F) == 0 && return S
+    end
+    return nothing
+end
+
+# range of f over a period (sampled), for the admissible levels
+function _tpms_range(kind)
+    f = _TPMS_F[kind]
+    r = range(0, 2π; length=49)
+    vals = [f(x, y, z) for x in r, y in r, z in r]
+    return minimum(vals), maximum(vals)
+end
+
+function _tpms_level_range(kind, type)
+    fmin, fmax = _tpms_range(kind)
+    return type === :network ? (fmin, fmax) : (0.0, max(fmax, -fmin))
+end
+
+# true if a component of the solid grid nodes wraps around the cell in three independent directions
 function _tpms_percolates(kind, type, level, n, N)
     F = _tp_levelfun(kind, type, level, n)
-    solid = [F((i / N, j / N, k / N)) < 0 for i in 0:N-1, j in 0:N-1, k in 0:N-1]
+    solid = [F((i / N, j / N, k / N)) <= -1e-9 for i in 0:N-1, j in 0:N-1, k in 0:N-1]
     seen = falses(N, N, N)
     off = Array{NTuple{3,Int}}(undef, N, N, N)
     for s in CartesianIndices(solid)
         (solid[s] && !seen[s]) || continue
-        wraps = falses(3)
+        wraps = NTuple{3,Int}[]
         seen[s] = true; off[s] = (0, 0, 0)
         queue = [s]
         while !isempty(queue)
@@ -372,77 +435,129 @@ function _tpms_percolates(kind, type, level, n, N)
                 solid[qq] || continue
                 o = off[c] .+ w
                 if seen[qq]
-                    for i in 1:3
-                        off[qq][i] != o[i] && (wraps[i] = true)
-                    end
+                    o == off[qq] || push!(wraps, o .- off[qq])
                 else
                     seen[qq] = true; off[qq] = o; push!(queue, qq)
                 end
             end
         end
-        all(wraps) && return true
+        # rank of the winding vectors (integer, exact in Float64)
+        isempty(wraps) && continue
+        M = Float64.(reduce(hcat, collect.(unique(wraps))))
+        LinearAlgebra.rank(M) == 3 && return true
     end
     return false
 end
 
 function _tpms_checked_surface(kind, type, level, n, N, what)
-    S = _tpms_surface(kind, type, level, n, N)
-    (_tp_watertight(S, 0:6) && _tp_watertight(S, (0, 7:12...))) ||
-        throw(ArgumentError("$what: the surface is not closed at this resolution (walls too thin for the grid); " *
-                            "increase resolution or the density"))
-    # mean wall thickness 2V/A of the solid and of the complement, in grid cubes: below about 2
-    # the faceted surface is unreliable
-    A = _tp_area(S)
-    V = _tp_solid_volume(S)
-    cells = 2 * min(V, 1 - V) / A * N
+    S = _tpms_valid_surface(kind, type, level, n, N)
+    S === nothing && throw(ArgumentError("$what: no valid triangulated surface at this resolution (walls too thin for the " *
+                                         "grid, or the surface pinches at the grid nodes); increase resolution or change the density slightly"))
+    # mean wall thickness 2V/A of the solid and of the complement, in grid cubes
+    cells = _tp_cells(S, N)
     cells >= 2.2 || throw(ArgumentError("$what: the walls are only $(round(cells; digits=2)) grid cubes thick; " *
                                          "increase resolution (cubes per period) or move the density away from 0 and 1"))
     return S
 end
+_tp_cells(S, N) = (V = _tp_solid_volume(S); 2 * min(V, 1 - V) / _tp_area(S) * N)
+
+# resolution: the given one, or 24 cubes per period raised until the walls are 2.5 cubes thick
+function _tpms_resolution(kind, type, level, n, resolution)
+    resolution === nothing || return resolution
+    res = 24
+    S = _tpms_valid_surface(kind, type, level, n, n * res)
+    S === nothing && return res
+    c = _tp_cells(S, n * res)
+    isfinite(c) && c > 0 || return 64
+    return c >= 2.5 ? res : min(64, ceil(Int, res * 2.6 / c))
+end
+
+function _tpms_check_level(kind, type, level, what)
+    lo, hi = _tpms_level_range(kind, type)
+    level isa Real && isfinite(level) || throw(ArgumentError("$what: level must be a finite number"))
+    lo < level < hi || throw(ArgumentError("$what: the level of a $kind $type must be in ($(round(lo; digits=4)), $(round(hi; digits=4)))"))
+    return Float64(level)
+end
 
 """
-    tpms_density(kind; type = :sheet, level, periods = 1, resolution = 24)
+    tpms_density(kind; type = :sheet, level, periods = 1, resolution = nothing)
 
 Relative density (solid volume fraction) of a triply periodic minimal surface solid in a cubic
 cell with `periods` periods per side: `type = :network` is the solid `f ≤ level`, `:sheet` the
 wall `|f| ≤ level`, with `f` the level-set function of `kind` (`:gyroid`, `:schwarz_p`,
 `:diamond`, `:iwp`, `:neovius`) over one period `[0, 2π]³`. The solid is the faceted surface
-of a periodic marching-tetrahedra grid of `resolution` cubes per period (smoothed and projected
-onto the surface), the one that is meshed; its density converges as O(h²). Experimental.
+of a periodic marching-tetrahedra grid of `resolution` cubes per period (by default 24, raised
+until the walls are 2.5 cubes thick), smoothed onto the surface: the one that is meshed. Its
+density converges as O(h²). Networks that do not connect across the cell raise an error.
+Experimental.
 """
 function tpms_density(kind::Symbol; type::Symbol=:sheet, level, periods=1, resolution=nothing)
-    n, res = _tpms_args(kind, type, periods, resolution, "tpms_density")
-    level isa Real && isfinite(level) || throw(ArgumentError("tpms_density: level must be a finite number"))
-    type === :sheet && level <= 0 && throw(ArgumentError("tpms_density: the level of a sheet is its half-thickness in f, > 0"))
-    return _tp_solid_volume(_tpms_checked_surface(kind, type, Float64(level), n, n * res, "tpms_density"))
+    n, _ = _tpms_args(kind, type, periods, resolution, "tpms_density")
+    c = _tpms_check_level(kind, type, level, "tpms_density")
+    res = _tpms_resolution(kind, type, c, n, resolution)
+    type === :network && !_tpms_percolates(kind, type, c, n, n * res) &&
+        throw(ArgumentError("tpms_density: this $kind network does not connect across the cell (below its pinch-off)"))
+    return _tp_solid_volume(_tpms_checked_surface(kind, type, c, n, n * res, "tpms_density"))
 end
 
 """
-    tpms_level(kind; type = :sheet, density, periods = 1, resolution = 24) -> level
+    tpms_level(kind; type = :sheet, density, periods = 1, resolution = nothing) -> level
 
 Level of [`tpms_density`](@ref) that gives the relative `density`, by bisection on the volume of
 the faceted solid (to about 1e-4: the volume jumps by ~1e-5 when the grid topology changes).
-Network solids below their pinch-off (e.g. Schwarz P below about 0.21) do not connect across the
-cell and raise an error. Experimental.
+Networks below their pinch-off (e.g. Schwarz P below about 0.21) do not connect across the cell,
+and walls too thin for the grid cannot be triangulated: both raise an error. Experimental.
 """
-function tpms_level(kind::Symbol; type::Symbol=:sheet, density, periods=1, resolution=nothing)
-    n, res = _tpms_args(kind, type, periods, resolution, "tpms_level")
-    density isa Real && 0 < density < 1 || throw(ArgumentError("tpms_level: density must be in (0, 1)"))
-    fmin, fmax = _tpms_range(kind)
-    a, b = type === :network ? (fmin + 1e-3, fmax - 1e-3) : (1e-3, max(fmax, -fmin) - 1e-3)
-    N = n * res
-    vol(c) = _tp_solid_volume(_tpms_surface(kind, type, c, n, N))
-    c = (a + b) / 2
-    v = NaN
-    for _ in 1:50
-        c = (a + b) / 2
-        v = vol(c)
-        abs(v - density) < 1e-4 && break
-        v < density ? (a = c) : (b = c)
+tpms_level(kind::Symbol; type::Symbol=:sheet, density, periods=1, resolution=nothing) =
+    first(_tpms_level(kind, type, density, periods, resolution, "tpms_level"))
+
+function _tpms_level(kind, type, density, periods, resolution, what)
+    n, _ = _tpms_args(kind, type, periods, resolution, what)
+    density isa Real && 0 < density < 1 || throw(ArgumentError("$what: density must be in (0, 1)"))
+    lo, hi = _tpms_level_range(kind, type)
+    function bisect(N)
+        a, b = lo + 1e-3, hi - 1e-3
+        a0 = a
+        c, v = a, NaN
+        # start off-centre: level 0 is a degenerate surface for some kinds
+        frac = 0.5 + 1 / (2π * 7)
+        for _ in 1:60
+            c = a + frac * (b - a)
+            v = _tp_solid_volume(first(_tpms_surface(kind, type, c, n, N)))
+            (abs(v - density) < 1e-4 || b - a < 1e-9 * (hi - lo)) && break
+            v < density ? (a = c) : (b = c)
+            frac = 0.5
+        end
+        abs(v - density) < 1e-3 || throw(ArgumentError("$what: density $density is not reachable for a $kind $type " *
+                                                       "at this resolution (walls too thin for the grid)"))
+        return c
     end
-    abs(v - density) < 1e-3 || throw(ArgumentError("tpms_level: density $density is not reachable for $kind $type at this resolution"))
-    type === :network && !_tpms_percolates(kind, type, c, n, N) &&
-        throw(ArgumentError("tpms_level: a $kind network of density $density does not connect across the cell (below its pinch-off); raise the density"))
-    _tpms_checked_surface(kind, type, c, n, N, "tpms_level")
-    return c
+    res = resolution === nothing ? 24 : resolution
+    c = try
+        bisect(n * res)
+    catch e
+        # thin walls at the default resolution: try a finer grid
+        (e isa ArgumentError && resolution === nothing) || rethrow()
+        res = 40
+        bisect(n * res)
+    end
+    if resolution === nothing
+        r2 = _tpms_resolution(kind, type, c, n, nothing)
+        r2 != res && (res = r2; c = bisect(n * res))
+    end
+    type === :network && !_tpms_percolates(kind, type, c, n, n * res) &&
+        throw(ArgumentError("$what: a $kind network of density $density does not connect across the cell (below its pinch-off); raise the density"))
+    # a level whose surface is degenerate: the nearest valid level with the same density (to 1e-3)
+    S = _tpms_valid_surface(kind, type, c, n, n * res)
+    if S === nothing
+        δ = 1e-3 * (hi - lo)
+        for k in 1:6, sg in (1, -1)
+            c2 = c + sg * k * δ
+            S2 = _tpms_valid_surface(kind, type, c2, n, n * res)
+            S2 === nothing && continue
+            abs(_tp_solid_volume(S2) - density) < 1e-3 && (c = c2; S = S2; break)
+        end
+    end
+    _tpms_checked_surface(kind, type, c, n, n * res, what)
+    return c, res
 end
