@@ -25,34 +25,34 @@ can be read directly with GridapGmsh.
 
 <table>
 <tr>
-<td align="center"><img src="docs/imgs/gallery/mre_chains.png" width="180"><br>particle chains (MRE)</td>
-<td align="center"><img src="docs/imgs/gallery/octet.png" width="180"><br>octet lattice</td>
-<td align="center"><img src="docs/imgs/gallery/polycrystal.png" width="180"><br>Voronoi polycrystal</td>
-<td align="center"><img src="docs/imgs/gallery/closed_foam.png" width="180"><br>closed-cell foam (cut open)</td>
-<td align="center"><img src="docs/imgs/gallery/kelvin.png" width="180"><br>Kelvin open foam (2×2×2)</td>
+<td align="center"><img src="docs/imgs/gallery/octet.png" width="150"><br>octet lattice</td>
+<td align="center"><img src="docs/imgs/gallery/kelvin.png" width="150"><br>Kelvin open foam (2×2×2)</td>
+<td align="center"><img src="docs/imgs/gallery/closed_foam.png" width="150"><br>closed-cell foam (cut open)</td>
+<td align="center"><img src="docs/imgs/gallery/polycrystal.png" width="150"><br>Voronoi polycrystal</td>
+<td align="center"><img src="docs/imgs/gallery/plates_sc_fcc.png" width="150"><br>SC + FCC plates (cut)</td>
+<td align="center"><img src="docs/imgs/gallery/plates_bcc.png" width="150"><br>BCC plates (cut)</td>
 </tr>
 <tr>
-<td align="center"><img src="docs/imgs/gallery/random.png" width="180"><br>random spheres</td>
-<td align="center"><img src="docs/imgs/gallery/fibres.png" width="180"><br>random fibres</td>
-<td align="center"><img src="docs/imgs/gallery/bcc.png" width="180"><br>BCC spheres</td>
-<td align="center"><img src="docs/imgs/gallery/mre_chains_2d.png" width="180"><br>2D chains</td>
-<td align="center"><img src="docs/imgs/gallery/disks2d.png" width="180"><br>2D disks, two sizes</td>
+<td align="center"><img src="docs/imgs/gallery/mre_chains.png" width="150"><br>particle chains (MRE)</td>
+<td align="center"><img src="docs/imgs/gallery/random.png" width="150"><br>random spheres</td>
+<td align="center"><img src="docs/imgs/gallery/bcc.png" width="150"><br>BCC spheres</td>
+<td align="center"><img src="docs/imgs/gallery/fibres.png" width="150"><br>random fibres</td>
+<td align="center"><img src="docs/imgs/gallery/short_fibres.png" width="150"><br>short fibres (isotropic)</td>
+<td align="center"><img src="docs/imgs/gallery/fibres_hybrid.png" width="150"><br>particles + short fibres</td>
 </tr>
 <tr>
-<td align="center"><img src="docs/imgs/gallery/reentrant.png" width="180"><br>re-entrant (auxetic) 2D</td>
-<td align="center"><img src="docs/imgs/gallery/kagome.png" width="180"><br>kagome 2D</td>
-<td align="center"><img src="docs/imgs/gallery/hexachiral.png" width="180"><br>hexachiral (auxetic)</td>
-<td align="center"><img src="docs/imgs/gallery/antitetrachiral.png" width="180"><br>anti-tetrachiral</td>
-<td align="center"><img src="docs/imgs/gallery/rotating_squares.png" width="180"><br>rotating squares</td>
+<td align="center"><img src="docs/imgs/gallery/gyroid.png" width="150"><br>gyroid sheet (TPMS, experimental)</td>
+<td align="center"><img src="docs/imgs/gallery/mixture.png" width="150"><br>hard + soft mixture</td>
+<td align="center"><img src="docs/imgs/gallery/mre_chains_2d.png" width="150"><br>2D chains</td>
+<td align="center"><img src="docs/imgs/gallery/disks2d.png" width="150"><br>2D disks, two sizes</td>
+<td align="center"><img src="docs/imgs/gallery/clusters2d.png" width="150"><br>clustered disks + filler</td>
 </tr>
 <tr>
-<td align="center"><img src="docs/imgs/gallery/mixture.png" width="180"><br>hard + soft mixture</td>
-<td align="center"><img src="docs/imgs/gallery/clusters2d.png" width="180"><br>clustered disks + filler</td>
-<td align="center"><img src="docs/imgs/gallery/short_fibres.png" width="180"><br>short fibres (isotropic)</td>
-<td align="center"><img src="docs/imgs/gallery/fibres_hybrid.png" width="180"><br>particles + short fibres</td>
-<td align="center"><img src="docs/imgs/gallery/plates_sc_fcc.png" width="180"><br>SC + FCC plates (cut)</td>
-<td align="center"><img src="docs/imgs/gallery/plates_bcc.png" width="180"><br>BCC plates (cut)</td>
-<td align="center"><img src="docs/imgs/gallery/gyroid.png" width="180"><br>gyroid sheet (TPMS, experimental)</td>
+<td align="center"><img src="docs/imgs/gallery/reentrant.png" width="150"><br>re-entrant (auxetic) 2D</td>
+<td align="center"><img src="docs/imgs/gallery/kagome.png" width="150"><br>kagome 2D</td>
+<td align="center"><img src="docs/imgs/gallery/hexachiral.png" width="150"><br>hexachiral (auxetic)</td>
+<td align="center"><img src="docs/imgs/gallery/antitetrachiral.png" width="150"><br>anti-tetrachiral</td>
+<td align="center"><img src="docs/imgs/gallery/rotating_squares.png" width="150"><br>rotating squares</td>
 </tr>
 </table>
 
