@@ -25,6 +25,7 @@ include("helpers.jl")
     @testset "Orientation tensors" begin include("test_orientation.jl") end
     @testset "Polyhedra and polygons" begin include("test_polyhedra.jl") end
     @testset "Voronoi tessellations" begin include("test_voronoi.jl") end
+    @testset "Laguerre tessellations" begin include("test_laguerre.jl") end
     @testset "Void phases and foams" begin include("test_foams.jl") end
     @testset "Plate lattices" begin include("test_plates.jl") end
     @testset "Hollow struts" begin include("test_hollow.jl") end
