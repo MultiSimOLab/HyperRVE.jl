@@ -247,3 +247,36 @@ end
         end
     end
 end
+
+@testset "sphere cap cut next to its pole: overlapping facets are remeshed" begin
+    # centre 0.01 from the face x = 0: Frontal-Delaunay overlaps the cap and its face disk on
+    # this Mac (knife-edge: other platforms may mesh it at once; both must give a valid mesh)
+    c = Cell((1.0, 1.0, 1.0))
+    rve = RVE(c, Phase(:p, [Sphere((0.01, 0.5, 0.5), 0.2)]; refine=0.02))
+    vm = Ref(0.0)
+    res = generate(rve; h=0.1) do r
+        vm[] = phase_mesh_volume(r, "p")
+    end
+    @test all(x -> x.ok && x.npairs > 0, res.periodicity)
+    @test vm[] ≈ 4π * 0.2^3 / 3 rtol = 1e-2
+    @test res.stats.min_quality > 0.01 && res.stats.ninverted == 0
+    # a scaled, shifted cell
+    k = 1e-3
+    cs = Cell(k .* (1.0, 1.0, 1.0); origin=(2.0, -1.0, 0.5))
+    rs = generate(RVE(cs, Phase(:p, [Sphere(cs.origin .+ k .* (0.01, 0.5, 0.5), 0.2k)]; refine=0.02k)); h=0.1k)
+    @test all(x -> x.ok, rs.periodicity) && rs.stats.ninverted == 0
+    # the caller's logger and its old errors: kept, and not taken as errors of this mesh
+    gmsh.initialize()
+    try
+        gmsh.logger.start()
+        gmsh.option.setNumber("General.AbortOnError", 0)
+        gmsh.logger.write("an old failure", "error")
+        gmsh.option.setNumber("General.AbortOnError", 2)
+        @test generate(rve; h=0.1).stats.ninverted == 0
+        @test any(m -> occursin("an old failure", m), gmsh.logger.get())
+        @test gmsh.option.getNumber("General.AbortOnError") == 2
+    finally
+        gmsh.logger.stop()
+        gmsh.finalize()
+    end
+end

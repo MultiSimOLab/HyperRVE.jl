@@ -157,7 +157,7 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{Interf
                 gmsh.model.mesh.clear()
             end
         end
-        gmsh.model.mesh.generate(D)
+        _generate_retry_overlap!(D, opts)
     catch e
         e isa ErrorException || rethrow()
         alt = opts.algorithm == :delaunay ? "" : ", or try algorithm = :delaunay"
@@ -220,6 +220,49 @@ function mesh_stats(frame::Frame{D}, opts::MeshOptions, part::Partition) where {
     return MeshStats(length(ntags), length(tags), opts.order, minimum(q), sum(q) / length(q),
                      minimum(emin), maximum(emax), Tuple(hist), ninv,
                      sj === nothing ? NaN : minimum(sj), (wp[1], wp[2], wp[3]), part.names[owner[w]], pq)
+end
+
+# Frontal-Delaunay can mesh a spherical cap cut by a face, whose boundary passes close to the
+# pole of the sphere parametrisation, with facets that overlap the neighbouring surface. The 3D
+# mesher reports the surfaces; remesh those with MeshAdapt (then Delaunay) and try again. The
+# 3D error must not be thrown: Gmsh stays locked ("I'm busy") after an exception in generate.
+function _generate_retry_overlap!(D, opts::MeshOptions)
+    (D == 3 && opts.surface_algorithm in (:default, :frontal)) || return gmsh.model.mesh.generate(D)
+    abort = gmsh.option.getNumber("General.AbortOnError")
+    # the Gmsh logger is global: keep the caller's one (and its messages) if it is running
+    gmsh.logger.start()
+    log = gmsh.logger.get()
+    owned = !any(m -> occursin("Logger already started", m), log)
+    mark = length(log)
+    tried = Int[]
+    try
+        gmsh.option.setNumber("General.AbortOnError", 0)       # never throw from inside Gmsh
+        for attempt in 1:3
+            gmsh.model.mesh.generate(D)
+            log = gmsh.logger.get()
+            errs = [replace(m, r"^Error\s*:\s*" => "") for m in log[mark+1:end] if startswith(m, "Error")]
+            mark = length(log)
+            isempty(errs) && break
+            lines = filter(m -> occursin("overlapping facets", m), errs)
+            # other errors: as before (an error with the default AbortOnError, ignored otherwise)
+            isempty(lines) && (abort >= 2 ? error(join(errs, "; ")) : break)
+            attempt == 3 && error(join(errs, "; ") * "; try surface_algorithm = :meshadapt")
+            for m in lines, c in eachmatch(r"surface (\d+)", m)
+                t = parse(Int, c.captures[1])
+                # a periodic slave copies its master: set the algorithm on both
+                for u in unique((t, Int(first(gmsh.model.mesh.getPeriodic(2, [t])))))
+                    gmsh.model.mesh.setAlgorithm(2, u, attempt == 1 ? 1 : 5)
+                    push!(tried, u)
+                end
+            end
+            gmsh.model.mesh.clear()
+        end
+    finally
+        gmsh.option.setNumber("General.AbortOnError", abort)
+        owned && gmsh.logger.stop()
+    end
+    isempty(tried) || @info "generate: remeshed surfaces $(sort(unique(tried))) with MeshAdapt/Delaunay after overlapping facets"
+    return nothing
 end
 
 """
