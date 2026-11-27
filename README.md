@@ -28,9 +28,9 @@ can be read directly with GridapGmsh.
 <td align="center"><img src="docs/imgs/gallery/octet.png" width="150"><br>octet lattice</td>
 <td align="center"><img src="docs/imgs/gallery/kelvin.png" width="150"><br>Kelvin open foam (2×2×2)</td>
 <td align="center"><img src="docs/imgs/gallery/closed_foam.png" width="150"><br>closed-cell foam (cut open)</td>
+<td align="center"><img src="docs/imgs/gallery/rounded_foam.png" width="150"><br>rounded closed-cell foam (cut)</td>
 <td align="center"><img src="docs/imgs/gallery/polycrystal.png" width="150"><br>Voronoi polycrystal</td>
-<td align="center"><img src="docs/imgs/gallery/plates_sc_fcc.png" width="150"><br>SC + FCC plates (cut)</td>
-<td align="center"><img src="docs/imgs/gallery/plates_bcc.png" width="150"><br>BCC plates (cut)</td>
+<td align="center"><img src="docs/imgs/gallery/laguerre.png" width="150"><br>Laguerre polycrystal</td>
 </tr>
 <tr>
 <td align="center"><img src="docs/imgs/gallery/mre_chains.png" width="150"><br>particle chains (MRE)</td>
@@ -41,13 +41,15 @@ can be read directly with GridapGmsh.
 <td align="center"><img src="docs/imgs/gallery/fibres_hybrid.png" width="150"><br>particles + short fibres</td>
 </tr>
 <tr>
+<td align="center"><img src="docs/imgs/gallery/plates_sc_fcc.png" width="150"><br>SC + FCC plates (cut)</td>
+<td align="center"><img src="docs/imgs/gallery/plates_bcc.png" width="150"><br>BCC plates (cut)</td>
 <td align="center"><img src="docs/imgs/gallery/gyroid.png" width="150"><br>gyroid sheet (TPMS, experimental)</td>
 <td align="center"><img src="docs/imgs/gallery/mixture.png" width="150"><br>hard + soft mixture</td>
 <td align="center"><img src="docs/imgs/gallery/mre_chains_2d.png" width="150"><br>2D chains</td>
 <td align="center"><img src="docs/imgs/gallery/disks2d.png" width="150"><br>2D disks, two sizes</td>
-<td align="center"><img src="docs/imgs/gallery/clusters2d.png" width="150"><br>clustered disks + filler</td>
 </tr>
 <tr>
+<td align="center"><img src="docs/imgs/gallery/clusters2d.png" width="150"><br>clustered disks + filler</td>
 <td align="center"><img src="docs/imgs/gallery/reentrant.png" width="150"><br>re-entrant (auxetic) 2D</td>
 <td align="center"><img src="docs/imgs/gallery/kagome.png" width="150"><br>kagome 2D</td>
 <td align="center"><img src="docs/imgs/gallery/hexachiral.png" width="150"><br>hexachiral (auxetic)</td>
