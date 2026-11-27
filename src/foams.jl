@@ -117,7 +117,11 @@ function _shrunk(t::Tessellation{D}, i, w) where {D}
     return P
 end
 
-_poly_volume(P::_Poly3) = abs(_polyhedron_volume(_indexed(P, 1e-12)...))
+# the weld tolerance is relative to the size of the body (cell-local coordinates, about the cell size)
+function _poly_volume(P::_Poly3)
+    sc = maximum(p -> maximum(abs, p), _vertices(P))
+    return abs(_polyhedron_volume(_indexed(P, 1e-12 * sc)...))
+end
 _poly_volume(P::_Poly2) = abs(_polygon_area(P.pts))
 
 # pieces of a body (cell-local clipping polyhedron/polygon) inside the cell: along directions

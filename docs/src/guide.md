@@ -299,7 +299,7 @@ interface groups (about 7 per grain).
 ## Laguerre tessellations and dense packings
 
 `dense_spheres(cell; radius, fraction, n, min_gap, rng)` packs non-overlapping spheres (disks
-in 2D) up to a fraction of about 0.6 (2D: 0.8) by growing them from a dilute state while
+in 2D) up to a fraction of about 0.6 (2D: 0.75) by growing them from a dilute state while
 their overlaps are relaxed; `radius` follows the rules of `random_spheres` (a number, a vector
 or a sampler `rng -> r`). Past jamming it throws an error (`strict = false`: a warning and
 smaller spheres).

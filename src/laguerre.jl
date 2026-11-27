@@ -86,8 +86,9 @@ end
 
 Non-overlapping spheres (disks in 2D) packed much denser than [`random_spheres`](@ref): the
 spheres start small at random positions and grow while their overlaps are relaxed. Fractions
-up to about 0.6 (3D) and 0.8 (2D) are reached; random sequential addition stalls at about 0.38
-and 0.55. `radius`, `fraction` and `n` follow the rules of `random_spheres`: exactly two of
+up to about 0.6 (3D) and 0.75 (2D, equal disks; more with a size distribution) are reached;
+random sequential addition stalls at about 0.38 and 0.55. The spheres are returned largest
+first (as in `random_spheres`). `radius`, `fraction` and `n` follow the rules of `random_spheres`: exactly two of
 them, or a vector of radii, or a sampler `rng -> r` with `fraction` or `n`.
 
 - Along periodic directions the spheres may cross the faces (`generate` completes them);
@@ -117,20 +118,22 @@ function dense_spheres(cell::Cell{D}; radius=nothing, fraction=nothing, n=nothin
     Re = (R .+ gap / 2) .* (1 + tol)
     X, g = _grow!(r, Re, L, per; tol)
     η = sum(_ballvol(Val(D), x) for x in R) / V
+    Rout = g == 1 ? R : g .* (R .+ gap / 2) .- gap / 2     # jammed: the spheres scaled, min_gap kept
     if g < 1
+        ok = all(>(0), Rout)
+        ηo = ok ? sum(_ballvol(Val(D), x) for x in Rout) / V : 0.0
         msg = @sprintf("dense_spheres: the packing jammed at fraction %.3f (requested %.3f%s); reduce fraction or min_gap",
-                       η * g^D, η, gap > 0 ? " with min_gap" : "")
-        strict && throw(ArgumentError(msg))
+                       ηo, η, gap > 0 ? " with min_gap" : "")
+        (strict || !ok) && throw(ArgumentError(ok ? msg : msg * " (min_gap is larger than the smallest spheres can keep)"))
         @warn msg
     end
     G = D == 3 ? Sphere : Disk
-    return [G(cell.origin .+ X[i], g == 1 ? R[i] : g * (R[i] + gap / 2) - gap / 2) for i in eachindex(R)]
+    return [G(cell.origin .+ X[i], Rout[i]) for i in eachindex(R)]
 end
 
 # ---------------------------------------------------------------- Laguerre tessellation
 
-_cellvol(P::_Poly3) = abs(_polyhedron_volume(_indexed(P, 1e-12)...))
-_cellvol(P::_Poly2) = abs(_polygon_area(P.pts))
+_cellvol(P) = _poly_volume(P)
 
 function _facearea(f::Vector{NTuple{3,Float64}})
     a = (0.0, 0.0, 0.0)
@@ -156,7 +159,8 @@ function _fit_weights(X, w0, v, L, per; rtol=1e-9, maxit=100)
         nothing
     end
     C = cells(w)
-    C === nothing && throw(ArgumentError("laguerre: a cell of the initial weights is empty"))
+    C === nothing && (w = zeros(N); C = cells(w))            # start from the Voronoi cells
+    C === nothing && throw(ArgumentError("laguerre: a Voronoi cell of the seeds is empty"))
     a = [_cellvol(P) for P in C]
     err = maximum(abs.(a .- v) ./ v)
     N == 1 && return w
@@ -170,7 +174,12 @@ function _fit_weights(X, w0, v, L, per; rtol=1e-9, maxit=100)
             J[i, j] -= c
         end
         δ = zeros(N)
-        δ[2:end] = J[2:end, 2:end] \ (v .- a)[2:end]
+        δ[2:end] = try
+            J[2:end, 2:end] \ (v .- a)[2:end]
+        catch e
+            e isa LinearAlgebra.SingularException || rethrow()
+            throw(ArgumentError("laguerre: the volumes could not be matched (disconnected cells)"))
+        end
         t = 1.0
         while true
             wn = w .+ t .* δ
@@ -254,6 +263,7 @@ function laguerre(cell::Cell{D}; spheres=nothing, seeds=nothing, radii=nothing, 
         all(x -> x > 0, v) || throw(ArgumentError("laguerre: volumes must be positive"))
         abs(sum(v) / V - 1) < 1e-6 ||
             throw(ArgumentError(@sprintf("laguerre: the volumes add up to %.6g, not to the volume of the cell %.6g", sum(v), V)))
+        v .*= V / sum(v)                                   # exact sum (the fit matches every cell to 1e-9)
         w = _fit_weights(X, w, v, L, per)
     end
     return _tessellate(cell, X, L, per, w; what="laguerre")

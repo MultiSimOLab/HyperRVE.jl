@@ -11,6 +11,17 @@ function min_clearance(s, cell)
     end
     return m
 end
+# the same with all periodic images (spheres large compared with the cell)
+function min_clearance_images(s, cell)
+    L = cell.size; per = cell.periodic; D = length(L)
+    m = Inf
+    for i in eachindex(s), j in i:length(s), k in Iterators.product(ntuple(d -> per[d] ? (-2:2) : (0:0), D)...)
+        i == j && all(==(0), k) && continue
+        δ = ntuple(d -> s[i].center[d] - s[j].center[d] - k[d] * L[d], D)
+        m = min(m, sqrt(sum(abs2, δ)) - s[i].radius - s[j].radius)
+    end
+    return m
+end
 # truncated log-normal radius sampler
 lognormal(m, cv, lo, hi) = rng -> (s2 = log(1 + cv^2); while true
     d = exp(log(m) - s2 / 2 + sqrt(s2) * randn(rng)); lo <= d <= hi && return d / 2
@@ -39,6 +50,14 @@ end)
     @test_throws r"jammed at fraction" dense_spheres(Cell((4.0, 4.0, 4.0)); radius=0.5, fraction=0.72, rng=1)
     s = @test_logs (:warn, r"jammed") dense_spheres(Cell((4.0, 4.0, 4.0)); radius=0.5, fraction=0.72, rng=1, strict=false)
     @test 0.55 < volume_fraction(s, Cell((4.0, 4.0, 4.0))) < 0.72 && min_clearance(s, Cell((4.0, 4.0, 4.0))) >= 0
+    # min_gap kept when jammed; a gap the smallest spheres cannot keep is an error
+    cg = Cell((5.0, 5.0, 5.0))
+    s = @test_logs (:warn, r"jammed") dense_spheres(cg; radius=[fill(1.0, 15); fill(0.3, 30)], min_gap=0.15, rng=1, strict=false)
+    @test min_clearance(s, cg) >= 0.15 - 1e-9 && all(x -> x.radius > 0, s)
+    @test_throws r"min_gap is larger" dense_spheres(cg; radius=[fill(1.0, 15); fill(0.02, 30)], min_gap=0.4, rng=1, strict=false)
+    # spheres large compared with the cell: no overlap with any image
+    s = dense_spheres(Cell((1.0, 1.0, 1.0)); radius=0.3, n=3, rng=1)
+    @test min_clearance_images(s, Cell((1.0, 1.0, 1.0))) >= 0
     @test_throws ArgumentError dense_spheres(c; radius=6.0, n=1)
     @test_throws ArgumentError dense_spheres(c; radius=0.5, fraction=0.3, min_gap=-1)
     # the relaxation does not allocate in its sweeps
@@ -72,8 +91,20 @@ end
     @test_throws r"positive radii" laguerre(c; seeds=pts, volumes=:spheres)
     @test_throws ArgumentError laguerre(c; spheres=s, seeds=pts)
     @test_throws r"one radius per seed" laguerre(c; seeds=pts, radii=[1.0, 2.0])
-    # a dominated seed: empty grain
+    # volumes that add up to the cell only to 1e-8; initial weights with an empty cell
+    @test grain_volumes(laguerre(c; seeds=pts, volumes=vt .* (1 + 1e-8))) ≈ vt rtol = 1e-6
     c4 = Cell((4.0, 4.0, 4.0))
+    sd = [(2.0, 2.0, 2.0), (2.3, 2.0, 2.0), (0.5, 0.5, 0.5)]
+    @test grain_volumes(laguerre(c4; seeds=sd, radii=[1.9, 0.0, 0.5], volumes=[20.0, 20.0, 24.0])) ≈ [20, 20, 24] rtol = 1e-6
+    # any scale and origin
+    for k in (1e-6, 1e4)
+        ck = Cell(k .* (10.0, 10.0, 10.0); origin=(3k, -k, 0.0))
+        sk = [Sphere(ck.origin .+ k .* (x.center .- c.origin), k * x.radius) for x in s]
+        tk = laguerre(ck; spheres=sk, volumes=:spheres)
+        @test grain_volumes(tk) ≈ k^3 .* grain_volumes(tv) rtol = 1e-6
+        @test wall_thickness(tk, 0.1) ≈ k * wall_thickness(tv, 0.1) rtol = 1e-6
+    end
+    # a dominated seed: empty grain
     @test_throws r"is empty" laguerre(c4; seeds=[(2.0, 2.0, 2.0), (2.3, 2.0, 2.0)], radii=[1.9, 0.0])
     # non-periodic direction
     cz = Cell((5.0, 5.0, 8.0); periodic=(true, true, false))

@@ -188,7 +188,7 @@ struct Tessellation{D}
     loops::Vector{Vector{Vector{Tuple{Int,NTuple{D,Int}}}}}     # grain → faces (2D: one loop) → (vertex, offset)
     neighbours::Vector{Vector{Tuple{Int,NTuple{D,Int}}}}        # grain → face → (neighbour, offset); 0 = wall
     moved::Vector{Bool}                                         # vertex displaced by the weld (its faces are triangulated)
-    weights::Vector{Float64}                                    # power weights (zeros: Voronoi)
+    weights::Vector{Float64}                                    # power weights (zeros: Voronoi; fitted weights are defined up to a constant)
 end
 
 Base.show(io::IO, t::Tessellation{D}) where {D} =
