@@ -1,5 +1,5 @@
 # Dense polydisperse packings and Laguerre (power) tessellations: grains with a size
-# distribution, as a polycrystal and as the cells of a closed-cell foam.
+# distribution, as a polycrystal and as the cells of a closed-cell foam (polyhedral and rounded).
 using HyperRVE, Random
 
 cell = Cell((1.0, 1.0, 1.0))
@@ -22,6 +22,12 @@ res = generate(RVE(cell, Phase(:pores, pores(t; wall = w); void = true); matrix 
                mesh = MeshOptions(optimize = :netgen),
                output = joinpath(@__DIR__, "laguerre_foam.msh"))
 println("wall ", round(w; digits = 4), ", solid fraction ", round(volume_fraction(res, :walls); digits = 3))
+
+# rounded pores (metal foam): density 0.15 and wall 0.01; the rounding is solved
+r = pore_rounding(t, 0.15; wall = 0.01)
+res = generate(RVE(cell, Phase(:pores, pores(t; wall = 0.01, rounding = r); void = true); matrix = :walls); h = 0.08,
+               mesh = MeshOptions(optimize = :netgen), retries = 3, output = joinpath(@__DIR__, "laguerre_rounded_foam.msh"))
+println("rounding ", round(r; digits = 3), ", solid fraction ", round(volume_fraction(res, :walls); digits = 4))
 
 # 2D: disks packed to 0.75 and their Laguerre cells
 c2 = Cell((1.0, 1.0))

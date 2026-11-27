@@ -1,7 +1,7 @@
 """
     generate(rve; h = nothing, mesh = MeshOptions(), output = nothing, geometry_only = false,
              check_periodicity = true, view = false, keep_open = false, verbosity = 0,
-             name = "RVE") -> RVEMesh
+             name = "RVE", retries = 0) -> RVEMesh
     generate(f, rve; kwargs...)
 
 Build the geometry of `rve` in Gmsh, assign phases, create physical groups, impose
@@ -19,6 +19,11 @@ periodicity and mesh it. Gmsh is initialised and finalised automatically; the re
   can be used; close it with [`close_gmsh`](@ref).
 - `verbosity`: 0 silent, 1 summary, 2 Gmsh terminal output.
 - `name`: name of the Gmsh model (made unique if a model with that name is already open).
+- `retries`: if Gmsh fails to mesh matching periodic faces (tiny curved patches on the faces,
+  e.g. with rounded pores), try again up to `retries` (at most 3) times with every phase
+  translated by a small shift along the periodic directions: the same periodic material, cut
+  by the cell faces elsewhere. A warning gives the shift, and `res.rve` holds the shifted
+  phases (default 0; not for TPMS). Errors of the do-block are not retried.
 - `interfaces`: create the interface physical groups (see below); `:union` creates only their
   union `interfaces` (for many phases, e.g. polycrystals: the result still lists every interface).
 
@@ -58,8 +63,55 @@ labels `xmin`/`xmax` (and the `corner_*`, `edge_*` groups) of a periodic directi
 between both sides and are not reliable as boundary tags; in periodic directions use
 `corners` (e.g. to fix rigid-body motions) and the phase names.
 """
-generate(rve::RVE; kwargs...) = _generate(nothing, rve; kwargs...)
-generate(f::Function, rve::RVE; kwargs...) = _generate(f, rve; kwargs...)
+generate(rve::RVE; kwargs...) = _generate_retry(nothing, rve; kwargs...)
+generate(f::Function, rve::RVE; kwargs...) = _generate_retry(f, rve; kwargs...)
+
+# Gmsh can fail to mesh matching periodic faces when tiny curved patches meet the cell faces
+# (e.g. rounded pores); the same periodic material translated by a small shift is cut by the
+# faces elsewhere and usually meshes.
+_periodic_failure(e) = e isa PeriodicityError || (e isa ErrorException && occursin("eriodic", e.msg))
+
+const _SHIFTS = ((0.0137, 0.0291, 0.0073), (0.0311, 0.0109, 0.0233), (0.0053, 0.0397, 0.0167))
+
+# an error of the do-block of the user: never retried
+struct _CallbackError <: Exception
+    e::Any
+end
+
+# tests only: number of next generate calls that fail as on unmatched periodic faces
+const _FORCED_FAILURES = Ref(0)
+
+function _generate_retry(f, rve::RVE{D}; retries::Integer=0, kwargs...) where {D}
+    (retries isa Integer && !(retries isa Bool) && 0 <= retries <= length(_SHIFTS)) ||
+        throw(ArgumentError("retries must be an integer in 0:$(length(_SHIFTS)), got $(repr(retries))"))
+    (retries == 0 || !any(rve.cell.periodic) || (D == 3 && _is_tpms_rve(rve))) && return _generate(f, rve; kwargs...)
+    g = f === nothing ? nothing : (res -> try
+        f(res)
+    catch e
+        throw(_CallbackError(e))
+    end)
+    shift(k) = ntuple(d -> rve.cell.periodic[d] ? _SHIFTS[k][d] * rve.cell.size[d] : 0.0, D)
+    err = nothing
+    for k in 0:retries
+        r = k == 0 ? rve :
+            RVE{D}(rve.cell, [Phase{D}(p.name, Geometry{D}[Translate(it, shift(k)) for it in p.items], p.h, p.refine, p.fuse, p.void)
+                              for p in rve.phases], rve.matrix, rve.tiling, rve.overlaps)
+        try
+            if _FORCED_FAILURES[] > 0
+                _FORCED_FAILURES[] -= 1
+                throw(PeriodicityError(1, "forced failure (tests)"))
+            end
+            res = _generate(g, r; kwargs...)
+            k > 0 && @warn "generate: Gmsh failed to mesh the periodic faces; meshed the same material shifted by $(round.(shift(k); sigdigits = 3)) (res.rve holds the shifted phases)"
+            return res
+        catch e
+            e isa _CallbackError && throw(e.e)
+            _periodic_failure(e) || rethrow()
+            err = e
+        end
+    end
+    throw(err)
+end
 
 function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), output=nothing,
                    geometry_only::Bool=false, check_periodicity::Bool=true, view::Bool=false,

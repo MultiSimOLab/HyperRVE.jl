@@ -27,6 +27,7 @@ include("helpers.jl")
     @testset "Voronoi tessellations" begin include("test_voronoi.jl") end
     @testset "Laguerre tessellations" begin include("test_laguerre.jl") end
     @testset "Void phases and foams" begin include("test_foams.jl") end
+    @testset "Rounded pores" begin include("test_rounding.jl") end
     @testset "Plate lattices" begin include("test_plates.jl") end
     @testset "Hollow struts" begin include("test_hollow.jl") end
     @testset "TPMS kernel" begin include("test_tpms.jl") end
