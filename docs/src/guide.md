@@ -176,6 +176,18 @@ than about two grid cubes raise an error.
 tpms_level(:gyroid; type = :sheet, density = 0.3)      # ≈ 0.463
 ```
 
+`tpms(kind; type, density | level, periods, resolution)` makes a TPMS phase item. It is meshed by
+its own path (the triangulated surface is kept as it is and Gmsh fills the volumes), so it must
+be the only item of the only phase, with a matrix or `matrix = nothing`, in a cubic periodic cell,
+without tiling, `h`, `refine`, `fuse`, `void` or order 2. The mesh has the phase groups, the
+interface, the faces, edges and corners, and every node of opposite faces is paired in the
+`$Periodic` section of the `.msh` file (GridapGmsh reads it).
+
+```julia
+rve = RVE(cell, Phase(:gyroid, tpms(:gyroid; type = :sheet, density = 0.3)))
+res = generate(rve; output = "gyroid.msh")
+```
+
 ## Random packings
 
 `random_spheres(cell; ...)`, `random_disks(cell; ...)` (2D) and `random_fibres(cell; axis, ...)`

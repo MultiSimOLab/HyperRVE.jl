@@ -52,6 +52,7 @@ can be read directly with GridapGmsh.
 <td align="center"><img src="docs/imgs/gallery/fibres_hybrid.png" width="180"><br>particles + short fibres</td>
 <td align="center"><img src="docs/imgs/gallery/plates_sc_fcc.png" width="180"><br>SC + FCC plates (cut)</td>
 <td align="center"><img src="docs/imgs/gallery/plates_bcc.png" width="180"><br>BCC plates (cut)</td>
+<td align="center"><img src="docs/imgs/gallery/gyroid.png" width="180"><br>gyroid sheet (TPMS, experimental)</td>
 </tr>
 </table>
 
@@ -63,6 +64,7 @@ particle_chains(cell; axis = 3, radius = 0.08, gap = 0.04, fraction = 0.12, rng 
 lattice(cell, :octet; density = 0.15)                                                  # strut lattice
 plate_cells(cell, (:sc, :fcc); density = 0.3)                                          # plate lattice (cells)
 hollow_lattice(cell, :octet; radius = 0.06, wall = 0.02)                               # hollow struts (shell, core)
+tpms(:gyroid; type = :sheet, density = 0.3)                                            # TPMS (experimental)
 grain_phases(voronoi(cell; n = 20, lloyd = 2, rng = 1))                                # polycrystal
 t = voronoi(cell; n = 8, rng = 1); pores(t; wall = wall_thickness(t, 0.15))            # closed foam
 foam_struts(voronoi(cell; seeds = [(0, 0, 0), (0.5, 0.5, 0.5)]); radius = 0.035)       # Kelvin foam

@@ -27,7 +27,7 @@ export tessellation_edges, foam_struts, pores, wall_thickness
 export particle_chains
 export particle_array, laminate
 export plate_cells, plate_density, plate_thickness
-export tpms_level, tpms_density
+export tpms, tpms_level, tpms_density, TPMS
 export chiral, rotating_squares, rotating_triangles
 export MeshOptions, InterfaceRefinement
 export generate, RVEMesh, write_mesh, view_mesh, close_gmsh, PeriodicityError
@@ -59,6 +59,7 @@ include("gmsh/groups.jl")
 include("gmsh/periodicity.jl")
 include("gmsh/interfaces.jl")
 include("gmsh/meshing.jl")
+include("gmsh/tpms.jl")
 include("generate.jl")
 
 end

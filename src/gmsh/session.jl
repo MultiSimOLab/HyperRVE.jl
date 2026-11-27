@@ -42,6 +42,7 @@ function _with_session(f, name::AbstractString; keep_open::Bool, verbosity::Int)
         gmsh.option.setNumber("Mesh.HighOrderSavePeriodic", 1)   # write mid-node pairs in $Periodic
         gmsh.option.setNumber("Geometry.OCCUnionUnify", 1)       # merge coplanar faces after fuse
         gmsh.model.add(model)
+        delete!(_TP_LINKS, model)          # stale periodic links of a closed TPMS model of the same name
         r = f(model)
         ok = true
         return r
@@ -99,6 +100,7 @@ function write_mesh(r::RVEMesh, path::AbstractString)
     gmsh.option.setNumber("Mesh.HighOrderSavePeriodic", 1)
     try
         gmsh.write(p)
+        haskey(_TP_LINKS, r.model) && _tp_write_periodic!(p, _TP_LINKS[r.model])
         _physical_periodic_affine!(p, Frame(r.rve))
     finally
         gmsh.option.setNumber("Mesh.MshFileVersion", v)

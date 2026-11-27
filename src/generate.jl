@@ -65,6 +65,8 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
                    geometry_only::Bool=false, check_periodicity::Bool=true, view::Bool=false,
                    keep_open::Bool=false, verbosity::Integer=0, name::AbstractString="RVE",
                    interfaces=true) where {D}
+    D == 3 && _is_tpms_rve(rve) &&
+        return _generate_tpms(f, rve; h, mesh, output, geometry_only, check_periodicity, view, keep_open, verbosity, name, interfaces)
     (interfaces === true || interfaces === false || interfaces === :union) || throw(ArgumentError("interfaces must be true, false or :union, got $(repr(interfaces))"))
     if h !== nothing
         mesh.h === nothing || throw(ArgumentError("give the global size either as h or as mesh.h, not both"))
