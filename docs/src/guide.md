@@ -134,7 +134,9 @@ Phase(:squares, rotating_squares(c; angle = π / 6, hinge = 0.08); fuse = true)
 Hollow struts: `hollow_lattice(cell, kind; radius, wall | density, node = :hollow)` (or
 `hollow_struts(cell, nodes, edges; radius, wall)`) returns `(shell, core)`: the lattice of
 outer `radius` and its cavity, to be painted over it by a later phase, void (empty tubes) or
-material (core-shell). `node = :solid` keeps the nodes solid, one closed cavity per strut.
+material (core-shell). The cavity phase must come after the shell in the list of phases and
+the RVE must keep the default `overlaps = :paint` (listed before, the lattice comes out solid).
+`node = :solid` keeps the nodes solid, one closed cavity per strut (no `fuse` needed for it).
 `relative_density(kind, x; wall, node)` is the exact density.
 
 ```julia
