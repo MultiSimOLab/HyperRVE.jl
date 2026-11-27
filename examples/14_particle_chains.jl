@@ -9,8 +9,9 @@ chains = particle_chains(cell; axis = 3, radius = r, gap = g, fraction = 0.12, r
 iso = random_spheres(cell; radius = r, n = length(chains), rng = 1)
 println(length(chains), " particles, fraction ", round(volume_fraction(chains, cell); digits = 4))
 
-# the ligaments between particles of a chain need about two elements across the gap
-res = generate(RVE(cell, Phase(:particles, chains; refine = 0.6g)); h = 0.1,
+# the ligaments between particles of a chain need about two elements across the gap: gaps = 2
+# refines only the thin gaps (between particles and between particles and faces)
+res = generate(RVE(cell, Phase(:particles, chains)); h = 0.1, mesh = MeshOptions(gaps = 2, optimize = :netgen),
                output = joinpath(@__DIR__, "mre_chains.msh"))
 println("chains: ", res.stats.nelements, " elements, min quality ", round(res.stats.min_quality; digits = 3))
 res = generate(RVE(cell, Phase(:particles, iso; refine = 0.02)); h = 0.1, output = joinpath(@__DIR__, "mre_isotropic.msh"))
@@ -25,4 +26,4 @@ println(length(wavy), " / ", length(broken), " / ", length(bct), " / ", length(n
 # 2D (plane strain): chains of disks along y
 c2 = Cell((1.0, 1.0))
 d = particle_chains(c2; axis = 2, radius = 0.05, gap = 0.01, fraction = 0.25, rng = 6)
-generate(RVE(c2, Phase(:particles, d; refine = 0.005)); h = 0.04, output = joinpath(@__DIR__, "mre_chains_2d.msh"))
+generate(RVE(c2, Phase(:particles, d)); h = 0.04, mesh = MeshOptions(gaps = 2), output = joinpath(@__DIR__, "mre_chains_2d.msh"))

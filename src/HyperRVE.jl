@@ -29,7 +29,7 @@ export particle_array, laminate
 export plate_cells, plate_density, plate_thickness
 export tpms, tpms_level, tpms_density, TPMS
 export chiral, rotating_squares, rotating_triangles
-export MeshOptions, InterfaceRefinement
+export MeshOptions, InterfaceRefinement, GapRefinement
 export generate, RVEMesh, write_mesh, view_mesh, close_gmsh, PeriodicityError
 export volume, volume_fraction, volume_fractions, phase_names, group_names, group_tag, quality_report
 export interface_names, interface_area, interface_tag
@@ -38,6 +38,7 @@ include("vectors.jl")
 include("cell.jl")
 include("geometry.jl")
 include("phase.jl")
+include("gaps_types.jl")
 include("meshoptions.jl")
 include("rve.jl")
 include("lattices.jl")
@@ -59,6 +60,7 @@ include("gmsh/groups.jl")
 include("gmsh/periodicity.jl")
 include("gmsh/interfaces.jl")
 include("gmsh/meshing.jl")
+include("gaps.jl")
 include("gmsh/tpms.jl")
 include("generate.jl")
 

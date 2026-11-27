@@ -14,6 +14,7 @@ include("helpers.jl")
     @testset "2D cells" begin include("test_2d.jl") end
     @testset "Mesh control" begin include("test_meshcontrol.jl") end
     @testset "Mesh options" begin include("test_meshoptions.jl") end
+    @testset "Thin gaps" begin include("test_gaps.jl") end
     @testset "Interface groups" begin include("test_interfaces.jl") end
     @testset "Capsules and fused phases" begin include("test_fuse.jl") end
     @testset "Strut lattices" begin include("test_lattices.jl") end

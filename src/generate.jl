@@ -115,8 +115,8 @@ function _generate(f, rve::RVE{D}; h=nothing, mesh::MeshOptions=MeshOptions(), o
                        "Curved order-2 elements are inverted where the mesh is coarse compared with the curvature: " *
                        "refine that phase, raise MeshOptions(curvature = ...), use optimize_curved = :elastic or curved = false." :
                        "Common causes: a thin ligament between inclusions or between an inclusion and a face that is " *
-                       "coarser than the local size; refine that phase (refine = ..., or Phase h), increase the gap, " *
-                       "reduce h, or use optimize = :netgen.")
+                       "coarser than the local size; use MeshOptions(gaps = 2) for thin gaps between spheres or disks, " *
+                       "refine that phase (refine = ..., or Phase h), increase the gap, reduce h, or use optimize = :netgen.")
             end
         end
         for p in files

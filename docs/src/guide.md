@@ -256,7 +256,7 @@ in chains along a cell axis, the microstructure of field-structured MREs:
 ```julia
 cell   = Cell((1.0, 1.0, 1.0))
 chains = particle_chains(cell; axis = 3, radius = 0.05, gap = 0.025, fraction = 0.15, rng = 1)
-rve    = RVE(cell, Phase(:particles, chains; refine = 0.015))
+rve    = RVE(cell, Phase(:particles, chains))              # generate(rve; mesh = MeshOptions(gaps = 2))
 ```
 
 - Along a periodic axis the chains are infinite: the gap is adjusted upwards so that the chain
@@ -265,10 +265,13 @@ rve    = RVE(cell, Phase(:particles, chains; refine = 0.015))
   `:hex` (with `n_chains = (n1, n2)`); `stagger = :alternate` shifts neighbouring chains by half
   a pitch (body-centred tetragonal).
 - `waviness`, `occupancy < 1` (broken chains), `aspect` (spheroids elongated along the chain).
-- Mesh: the ligament between two particles of a chain is `gap` wide; refine the phase to about
-  `gap / 2`…`gap` and keep `gap >= 0.1 radius`. Dense chains with thin gaps give large meshes and
-  Gmsh may fail on them ("overlapping facets"): `gap = 0.25 radius` with `refine = 0.6 gap` is a
-  robust starting point; a larger `chain_gap` keeps neighbouring chains apart.
+- Mesh: the ligament between two particles of a chain is `gap` wide. `MeshOptions(gaps = 2)`
+  puts two elements across every thin gap between spheres or disks (and between them and the
+  faces), with a size that follows the local width of the ligament, and keeps the rest coarse
+  (about 400 r / gap tetrahedra per gap; `optimize = :netgen` removes the occasional sliver).
+  Refining the whole phase (`refine = gap / 2`) also resolves the ligaments but costs 10–50
+  times more elements. `GapRefinement(elements, faces, growth)` sets the details; other
+  shapes (ellipsoids, capsules) are not refined yet.
 - The isotropic reference at the same fraction is `random_spheres(cell; radius, n = length(chains))`.
 
 ## Voronoi polycrystals
