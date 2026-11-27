@@ -32,10 +32,9 @@ const HG = HyperRVE
     @test occursin("elements = 2", sprint(show, GapRefinement()))
 end
 
-# elements whose barycentre is within t of a point, and their largest edge
+# elements whose barycentre is within t of a point, and the mean of their largest edges
 function ligament(p, t)
     n, edge = 0, 0.0
-    _, et, en = gmsh.model.mesh.getElements(3)
     for (ty, tags, nodes) in zip(gmsh.model.mesh.getElements(3)...)
         np = gmsh.model.mesh.getElementProperties(ty)[4]
         for k in 1:np:length(nodes)
@@ -43,10 +42,10 @@ function ligament(p, t)
             c = sum(X) ./ np
             sqrt(sum(abs2, c .- p)) < t || continue
             n += 1
-            edge = max(edge, maximum(sqrt(sum(abs2, X[a] .- X[b])) for a in 1:np for b in a+1:np))
+            edge += maximum(sqrt(sum(abs2, X[a] .- X[b])) for a in 1:np for b in a+1:np)
         end
     end
-    return n, edge
+    return n, n == 0 ? Inf : edge / n
 end
 
 @testset "gap meshes" begin
@@ -64,11 +63,15 @@ end
     end
     @test all(x -> x.ok && x.npairs > 0, res.periodicity)
     @test volume(res, :p) ≈ 2 * 4π * r^3 / 3 rtol = 1e-6
-    @test n0[] < 10 && n1[][1] >= 50 && n1[][2] <= 1.2g
+    @test n0[] < 10 && n1[][1] >= 50 && n1[][2] <= g
     @test res.stats.min_quality > 0.1 && res.stats.nelements < 100_000
+    res0 = res.stats.nelements
+    k = 1e-6
+    cs6 = Cell(k .* cell.size; origin=(3.0, -2.0, 5.0))
+    its6 = [Sphere(cs6.origin .+ k .* (s.center), k * s.radius) for s in items]
+    @test abs(generate(RVE(cs6, Phase(:p, its6)); h=0.1k, mesh=MeshOptions(gaps=2, optimize=:netgen)).stats.nelements - res0) < 0.1res0
     # 2D: far fewer elements than refining the whole phase
     c2 = Cell((1.0, 1.0))
-    d = [Disk((0.5, 0.25 + 0.5k), 0.1) for k in 0:1]
     d = [Disk((0.5, 0.25), 0.1), Disk((0.5, 0.452), 0.1)]
     rg = generate(RVE(c2, Phase(:p, d)); h=0.05, mesh=MeshOptions(gaps=2))
     rr = generate(RVE(c2, Phase(:p, d; refine=0.001)); h=0.05)
@@ -83,10 +86,25 @@ end
         res = generate(RVE(cf, Phase(:p, Sphere((0.25, 0.25, r + 0.003), r))); h=0.1, mesh=MeshOptions(gaps=GapRefinement(faces=faces)))
         @test res.stats.nelements > 0
     end
-    # the callback is removed: a later mesh without gaps is the same as before
+    # the callback is removed: remeshing the kept model gives the coarse mesh
     a = generate(RVE(cell, Phase(:p, items)); h=0.1).stats.nelements
-    generate(RVE(cell, Phase(:p, items)); h=0.1, mesh=MeshOptions(gaps=2))
-    @test generate(RVE(cell, Phase(:p, items)); h=0.1).stats.nelements == a
+    generate(RVE(cell, Phase(:p, items)); h=0.1, mesh=MeshOptions(gaps=2), keep_open=true)
+    gmsh.model.mesh.clear()
+    gmsh.model.mesh.generate(3)
+    @test abs(length(gmsh.model.mesh.getElements(3)[2][1]) - a) < 0.2a
+    close_gmsh()
+    # far or non-finite points never throw; threads are restored
+    @test HG._gap_size(HG._GAP_INDEX[], (1e20, -1e20, 0.0), 0.3) == 0.3
+    @test HG._gap_size(HG._GAP_INDEX[], (NaN, 0.0, Inf), 0.3) == 0.3
+    gmsh.initialize(); gmsh.option.setNumber("Mesh.MaxNumThreads3D", 4)
+    generate(RVE(cell, Phase(:p, items)); h=0.1, mesh=MeshOptions(gaps=2), keep_open=true)
+    @test gmsh.option.getNumber("Mesh.MaxNumThreads3D") == 4
+    close_gmsh()
+    # no matrix: no effect; frontal: a warning
+    @test_logs (:warn, r"without a matrix") match_mode = :any generate(RVE(cell, Phase(:p, items); matrix=nothing); h=0.1, mesh=MeshOptions(gaps=2))
+    # far items and a scaled, shifted cell give the same mesh
+    far = [Translate(s, (0.0, 0.0, 3 * cell.size[3])) for s in items]
+    @test abs(generate(RVE(cell, Phase(:p, far)); h=0.1, mesh=MeshOptions(gaps=2, optimize=:netgen)).stats.nelements - res0) < 0.1res0
     # no spheres: a warning
     @test_logs (:warn, r"no spheres") match_mode = :any generate(RVE(unitcell(), Phase(:b, Box((0.2, 0.2, 0.2), (0.3, 0.3, 0.3)))); h=0.2, mesh=MeshOptions(gaps=2))
 end

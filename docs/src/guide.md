@@ -256,7 +256,7 @@ in chains along a cell axis, the microstructure of field-structured MREs:
 ```julia
 cell   = Cell((1.0, 1.0, 1.0))
 chains = particle_chains(cell; axis = 3, radius = 0.05, gap = 0.025, fraction = 0.15, rng = 1)
-rve    = RVE(cell, Phase(:particles, chains; refine = 0.015))
+rve    = RVE(cell, Phase(:particles, chains))              # generate(rve; mesh = MeshOptions(gaps = 2))
 ```
 
 - Along a periodic axis the chains are infinite: the gap is adjusted upwards so that the chain

@@ -132,6 +132,8 @@ Mesh sizes: `generate(rve; h)` sets the bulk size, `Phase(...; h = ...)` the siz
 phase, and `refine = 0.02` the size on the interfaces of a phase, graded with a constant ratio
 (`MeshOptions(growth = 1.3)`) back to the bulk size. The size field is periodic: refining an
 inclusion close to a face also refines the opposite face, so periodic meshes stay well shaped.
+Thin gaps between spheres or disks, and between them and the faces, get about two elements
+across with `MeshOptions(gaps = 2)`, without refining the whole interface.
 
 Element order, meshing algorithms and optimisation are set with `MeshOptions(order = 2,
 algorithm = :frontal, optimize = :netgen, ...)`; `quality_report(res)` prints the quality

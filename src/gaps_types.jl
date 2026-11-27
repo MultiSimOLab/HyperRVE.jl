@@ -7,9 +7,12 @@
 Refinement of the thin gaps between spheres or disks (any phases, void ones included) and,
 with `faces = true`, between them and the cell faces: `elements` elements across each gap at
 its narrowest point, the size following the local width of the ligament and growing with
-`growth` (default `MeshOptions.growth`) into the inclusions. Only gaps narrower than
-`elements` times the bulk size act. A gap cut by a periodic face counts as two halves.
-Use it as `MeshOptions(gaps = 2)` or `MeshOptions(gaps = GapRefinement(elements = 3))`.
+`growth` (default `MeshOptions.growth`) into the inclusions. Only gaps narrower than the
+smaller radius and than `elements` times the bulk size act, and only with a matrix (without
+one the gaps are empty). A gap cut by a periodic face counts as two halves (`elements / 2`
+between the inclusion and the face, at least 1). Use it as `MeshOptions(gaps = 2)` or
+`MeshOptions(gaps = GapRefinement(elements = 3))`, with the `:delaunay` (default) or `:hxt`
+3D algorithm; `optimize = :netgen` removes the occasional sliver in a ligament.
 """
 struct GapRefinement
     elements::Float64

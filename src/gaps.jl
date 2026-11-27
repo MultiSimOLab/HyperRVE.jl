@@ -26,7 +26,7 @@ function _find_gaps(balls::Vector{Tuple{NTuple{D,Float64},Float64}}, lo, ext, pe
             for d in 1:D, side in (0, 1)
                 plane = lo[d] + side * ext[d]
                 s = abs(ca[d] - plane) - ra
-                0 < s < tmax || continue
+                0 < s < min(tmax, ra) || continue
                 p = ntuple(e -> e == d ? plane + sign(ca[d] - plane) * s / 2 : ca[e], D)
                 inside(p, 1e-9) && add!(_Gap{D}(p, ntuple(e -> e == d ? 1.0 : 0.0, D), s, ra, d))
             end
@@ -39,7 +39,7 @@ function _find_gaps(balls::Vector{Tuple{NTuple{D,Float64},Float64}}, lo, ext, pe
             dv = cb .- ca
             dist = sqrt(sum(abs2, dv))
             t = dist - ra - rb
-            0 < t < tmax || continue
+            0 < t < min(tmax, ra, rb) || continue
             u = dv ./ dist
             p = ca .+ u .* (ra + t / 2)
             R = ra * rb / (ra + rb)
@@ -71,6 +71,7 @@ struct _GapIndex
     g1::Float64
 end
 const _GAP_INDEX = Ref{_GapIndex}()
+const _GAP_THREADS = zeros(3)
 
 # size of a gap at offset δ from its midpoint: width of the ligament w = t + ρ²/(2R*) over n, growing
 # with slope g1 into the inclusions, within a cone from the midpoint
@@ -82,12 +83,13 @@ const _GAP_INDEX = Ref{_GapIndex}()
 end
 
 function _gap_size(I::_GapIndex, x::NTuple{3,Float64}, lc::Float64)
+    all(isfinite, x) || return lc                 # never throw inside the Gmsh callback
     b = 0
     stride = 1
     for d in 1:3
         s = (x[d] - I.lo[d]) / I.ext[d]
         I.per[d] && (s -= floor(s))
-        k = clamp(floor(Int, s * I.nb[d]), 0, I.nb[d] - 1)
+        k = floor(Int, clamp(s * I.nb[d], 0.0, I.nb[d] - 1.0))   # clamp first: no InexactError far away
         b += k * stride
         stride *= I.nb[d]
     end
@@ -107,6 +109,12 @@ _gap_callback(dim::Cint, tag::Cint, x::Cdouble, y::Cdouble, z::Cdouble, lc::Cdou
 # installs the callback for the gaps of the RVE (frame coordinates); returns the number of gaps
 function _install_gaps!(rve::RVE{D}, frame::Frame{D}, opts::MeshOptions, H, hmin) where {D}
     gr = opts.gaps
+    if rve.matrix === nothing
+        @warn "MeshOptions gaps: without a matrix the gaps between inclusions are empty; gaps has no effect"
+        return 0
+    end
+    opts.algorithm == :frontal &&
+        @warn "MeshOptions gaps: the :frontal 3D algorithm meshes the whole volume at the finest size; use :delaunay or :hxt"
     lo = to_frame(frame, domain_origin(rve))
     ext = to_frame_length.(Ref(frame), domain_size(rve))
     per = rve.cell.periodic
@@ -116,7 +124,10 @@ function _install_gaps!(rve::RVE{D}, frame::Frame{D}, opts::MeshOptions, H, hmin
         sh = ntuple(d -> k[d] * rve.cell.size[d], D)
         b = _ball(g, ntuple(_ -> 0.0, D))
         b === nothing && (unsupported = true; continue)
-        push!(balls, (Tuple(to_frame(frame, Tuple(b[1] .+ sh))), to_frame_length(frame, b[2])))
+        c = Tuple(to_frame(frame, Tuple(b[1] .+ sh)))
+        # centres far outside the domain: their periodic representative (the images are searched at ±1 period)
+        c = ntuple(d -> per[d] ? lo[d] + mod(c[d] - lo[d], ext[d]) : c[d], D)
+        push!(balls, (c, to_frame_length(frame, b[2])))
     end
     isempty(balls) && (@warn "MeshOptions gaps: no spheres or disks in the RVE; gaps has no effect"; return 0)
     unsupported && @warn "MeshOptions gaps: only the gaps between spheres or disks are refined; other items are ignored"
@@ -126,18 +137,23 @@ function _install_gaps!(rve::RVE{D}, frame::Frame{D}, opts::MeshOptions, H, hmin
     l3(v, z) = D == 3 ? Tuple(v) : (v[1], v[2], z)
     gaps = _GapI[]
     reach = Float64[]
+    clipped = 0
     for G in gs
         n = G.face > 0 && per[G.face] ? max(1.0, gr.elements / 2) : gr.elements
         hg = max(G.t / n, hmin)
+        hg > G.t / n && (clipped += 1)
         hg >= H && continue
         push!(gaps, _GapI(l3(G.p, 0.0), l3(G.u, 0.0), G.t, 2G.R, n, hg))
-        push!(reach, (H - hg) / g1)
+        # the law reaches H at the end of the cone and, radially, where the ligament is n H wide:
+        # beyond the larger of both it is not evaluated, so it must already be H there
+        push!(reach, max((H - hg) / g1, sqrt(2G.R * max(n * H - G.t, 0.0))) + G.t)
     end
+    clipped > 0 && @warn "MeshOptions gaps: hmin is larger than the gap size in $clipped gaps; they get fewer elements across"
     isempty(gaps) && return 0
     lo3, ext3 = l3(lo, -0.5), l3(ext, 1.0)
     per3 = opts.periodic_sizes ? l3(perd, false) : (false, false, false)
     rmax = maximum(reach)
-    nb = ntuple(d -> clamp(floor(Int, 2 * ext3[d] / rmax), 1, 48), 3)
+    nb = ntuple(d -> D == 2 && d == 3 ? 1 : clamp(floor(Int, 2 * ext3[d] / rmax), 1, 48), 3)
     bins = [Int32[] for _ in 1:prod(nb)]
     for (i, G) in enumerate(gaps)
         r = reach[i]
@@ -153,6 +169,12 @@ function _install_gaps!(rve::RVE{D}, frame::Frame{D}, opts::MeshOptions, H, hmin
     _GAP_INDEX[] = _GapIndex(gaps, lo3, ext3, per3, nb, bins, g1)
     cf = @cfunction(_gap_callback, Cdouble, (Cint, Cint, Cdouble, Cdouble, Cdouble, Cdouble, Ptr{Cvoid}))
     ierr = Ref{Cint}(0)
+    # the callback runs Julia code: Gmsh must call it from the main thread only
+    for k in 1:3
+        o = "Mesh.MaxNumThreads$(k)D"
+        _GAP_THREADS[k] = gmsh.option.getNumber(o)
+        gmsh.option.setNumber(o, 1)
+    end
     ccall((:gmshModelMeshSetSizeCallback, gmsh.lib), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cint}), cf, C_NULL, ierr)
     ierr[] == 0 || error("MeshOptions gaps: Gmsh could not install the size callback")
     return length(gaps)
@@ -161,5 +183,9 @@ end
 function _remove_gaps!()
     ierr = Ref{Cint}(0)
     ccall((:gmshModelMeshRemoveSizeCallback, gmsh.lib), Cvoid, (Ptr{Cint},), ierr)
+    for k in 1:3
+        gmsh.option.setNumber("Mesh.MaxNumThreads$(k)D", _GAP_THREADS[k])
+    end
+    _GAP_INDEX[] = _GapIndex(_GapI[], (0.0, 0.0, 0.0), (1.0, 1.0, 1.0), (false, false, false), (1, 1, 1), [Int32[]], 1.0)
     return nothing
 end
