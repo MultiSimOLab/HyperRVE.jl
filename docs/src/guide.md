@@ -321,6 +321,26 @@ rve = RVE(cell, grain_phases(t); matrix = nothing)
 As with Voronoi, random tessellations have short edges that leave a few poor elements;
 `optimize = :netgen` helps.
 
+## Metal foams with a pore size distribution
+
+`laguerre_foam` builds a closed-cell foam whose pore diameters (equivalent volume) follow a
+distribution, e.g. `truncated_lognormal(mean; cv, min, max)` (the mean of the truncated law):
+
+```julia
+dist = truncated_lognormal(4.0; cv = 0.35, min = 2.0, max = 8.0)    # mm
+f    = laguerre_foam(; n = 30, diameter = dist, porosity = 0.9, rng = 1)   # cubic cell for 30 pores
+f    = laguerre_foam(cell; diameter = dist, porosity = 0.9, wall = 0.1)    # given cell and wall: rounded pores
+rve  = RVE(f.cell, Phase(:pores, pores(f); void = true); matrix = :walls)
+pore_statistics(f)        # measured diameters (mean, std, min, max), porosity, wall, rounding, targets
+```
+
+The pore centres are a dense packing of spheres with the relative sizes of the pores, and the
+Laguerre cells get volumes proportional to the pore volumes. By default the pores are
+polyhedral and the wall gives the porosity; `wall` keeps the wall and rounds the pores,
+`rounding` keeps the rounding and solves the wall. A uniform wall removes relatively more from
+small pores, so the measured diameters are a few percent below the targets for the smallest
+pores. `retries = 3` in `generate` handles the occasional periodic-face failure of rounded pores.
+
 ## Void phases and foams
 
 `Phase(name, items; void = true)` makes empty space: what it covers is removed from the mesh
