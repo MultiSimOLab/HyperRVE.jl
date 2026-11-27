@@ -23,6 +23,7 @@ export struts, lattice, lattice_topology, relative_density, strut_radius, lattic
 export hollow_struts, hollow_lattice
 export random_spheres, random_disks, random_fibres, random_capsules, orientation_tensor
 export Tessellation, voronoi, grains, grain_phases, grain_volumes
+export dense_spheres, laguerre, grain_diameters
 export tessellation_edges, foam_struts, pores, wall_thickness
 export particle_chains
 export particle_array, laminate
@@ -46,6 +47,7 @@ include("random.jl")
 include("capsules.jl")
 include("voronoi.jl")
 include("foams.jl")
+include("laguerre.jl")
 include("plates.jl")
 include("tpms.jl")
 include("chains.jl")

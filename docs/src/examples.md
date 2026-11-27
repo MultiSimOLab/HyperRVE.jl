@@ -27,5 +27,6 @@ mesh next to the script.
 | `20_plate_lattices.jl` | SC, BCC, FCC plate lattices, isotropic SC + FCC, filled cells |
 | `21_hollow_struts.jl` | hollow strut lattices: hollow and solid nodes, core-shell |
 | `22_tpms.jl` | triply periodic minimal surfaces (experimental): gyroid sheet in a matrix, Schwarz P network |
+| `23_laguerre.jl` | dense polydisperse packing, Laguerre polycrystal with a grain size distribution, closed-cell foam on Laguerre cells, 2D |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.

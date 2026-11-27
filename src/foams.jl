@@ -80,13 +80,13 @@ end
 # each face (normal, offset)
 function _grain_planes(t::Tessellation{3}, i)
     v, f = _grain_geometry(t, i)
-    s = t.seeds[i] .* t.cell.size
+    s = _polyhedron_centroid(v, f)                     # inside (a Laguerre seed may lie outside its grain)
     planes = Tuple{NTuple{3,Float64},Float64}[]
     for face in f
         n = _face_normal(v, face)
         n = n ./ _norm(n)
         c = sum(n .* v[face[1]])
-        sum(n .* s) > c && (n = .-n; c = -c)            # outward: the seed is on the inner side
+        sum(n .* s) > c && (n = .-n; c = -c)            # outward: the centroid is on the inner side
         push!(planes, (n, c))
     end
     return _Poly3([[v[k] for k in face] for face in f], [(0, (0, 0, 0)) for _ in f]), planes
@@ -94,7 +94,7 @@ end
 function _grain_planes(t::Tessellation{2}, i)
     loop = only(t.loops[i])
     v = [_vpos(t, vo) for vo in loop]
-    s = t.seeds[i] .* t.cell.size
+    s = _polygon_centroid(v)
     planes = Tuple{NTuple{2,Float64},Float64}[]
     for k in eachindex(v)
         p, q = v[k], v[mod1(k + 1, length(v))]

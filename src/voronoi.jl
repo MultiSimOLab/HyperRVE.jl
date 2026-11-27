@@ -124,31 +124,39 @@ _vertices(P::_Poly2) = P.pts
 
 # ---------------------------------------------------------------- cells of all seeds
 
-function _voronoi_cells(X::Vector{NTuple{D,Float64}}, L::NTuple{D,Float64}, per::NTuple{D,Bool}, epsrel=1e-11) where {D}
+# Power (Laguerre) cells: the bisector of seeds i and j (weights w) is the plane at distance
+# (r² + w_i − w_j) / (2r) from x_i along the direction to x_j; w = 0 gives Voronoi cells. The
+# candidates are sorted by that distance and the loop stops when the plane lies beyond the
+# farthest vertex of the cell. A cell can be empty (a seed dominated by its neighbours).
+function _voronoi_cells(X::Vector{NTuple{D,Float64}}, L::NTuple{D,Float64}, per::NTuple{D,Bool}, epsrel=1e-11,
+                        w::AbstractVector{Float64}=zeros(length(X))) where {D}
     N = length(X)
     eps = epsrel * maximum(L)
+    wmax = maximum(w)
     cells = Any[]
     for i in 1:N
         P = D == 3 ? _box3(X[i], L, per, i) : _box2(X[i], L, per, i)
         R0 = maximum(p -> _norm(p .- X[i]), _vertices(P))
-        cand = Tuple{Float64,Int,NTuple{D,Int}}[]
+        # a plane can cut the box only if (r² + w_i − w_j)/(2r) <= R0
+        rmax = R0 + sqrt(R0^2 + max(wmax - w[i], 0.0))
+        cand = Tuple{Float64,Float64,Int,NTuple{D,Int}}[]
         for j in 1:N
-            # only the images within 2 R0 along every direction
-            kr = ntuple(d -> per[d] ? (ceil(Int, (X[i][d] - 2R0 - X[j][d]) / L[d]):floor(Int, (X[i][d] + 2R0 - X[j][d]) / L[d])) : (0:0), D)
+            kr = ntuple(d -> per[d] ? (ceil(Int, (X[i][d] - rmax - X[j][d]) / L[d]):floor(Int, (X[i][d] + rmax - X[j][d]) / L[d])) : (0:0), D)
             for k in Iterators.product(kr...)
-            j == i && all(==(0), k) && continue
-            y = X[j] .+ k .* L
-            r = _norm(y .- X[i])
-            r < 2R0 + eps && push!(cand, (r, j, k))
+                j == i && all(==(0), k) && continue
+                y = X[j] .+ k .* L
+                r = _norm(y .- X[i])
+                r < rmax + eps && push!(cand, ((r^2 + w[i] - w[j]) / (2r), r, j, k))
             end
         end
         sort!(cand)
         R = R0
-        for (r, j, k) in cand
-            r > 2R + eps && break
+        for (dpl, r, j, k) in cand
+            dpl > R + eps && break
             y = X[j] .+ k .* L
             n = (y .- X[i]) ./ r
-            if _clip!(P, n, _dot(n, (X[i] .+ y) ./ 2), (j, k), eps)
+            if _clip!(P, n, _dot(n, X[i]) + dpl, (j, k), eps)
+                (D == 3 ? isempty(P.faces) : length(P.pts) < 3) && throw(_EmptyCell(i))
                 R = maximum(p -> _norm(p .- X[i]), _vertices(P))
             end
         end
@@ -157,12 +165,17 @@ function _voronoi_cells(X::Vector{NTuple{D,Float64}}, L::NTuple{D,Float64}, per:
     return cells
 end
 
+struct _EmptyCell <: Exception
+    i::Int
+end
+
 # ---------------------------------------------------------------- welded complex
 
 """
     Tessellation{D}
 
-Periodic Voronoi tessellation of a cell (see [`voronoi`](@ref)): seeds, welded vertices
+Periodic Voronoi or Laguerre tessellation of a cell (see [`voronoi`](@ref) and
+[`laguerre`](@ref)): seeds, power weights (zero for Voronoi), welded vertices
 (fractional coordinates in `[0, 1)` along the wrapped directions) and, for each grain, its
 faces (3D: loops of `(vertex, offset)`; 2D: one loop) with the neighbour across each face.
 Use [`grains`](@ref), [`grain_phases`](@ref) and [`grain_volumes`](@ref).
@@ -175,6 +188,7 @@ struct Tessellation{D}
     loops::Vector{Vector{Vector{Tuple{Int,NTuple{D,Int}}}}}     # grain → faces (2D: one loop) → (vertex, offset)
     neighbours::Vector{Vector{Tuple{Int,NTuple{D,Int}}}}        # grain → face → (neighbour, offset); 0 = wall
     moved::Vector{Bool}                                         # vertex displaced by the weld (its faces are triangulated)
+    weights::Vector{Float64}                                    # power weights (zeros: Voronoi)
 end
 
 Base.show(io::IO, t::Tessellation{D}) where {D} =
@@ -340,12 +354,17 @@ end
 # Nearly degenerate seeds (a slightly perturbed regular lattice) make the in/on/out
 # classification of nearly coincident planes differ between neighbouring grains; a larger
 # classification tolerance treats them consistently as degenerate.
-function _tessellate(cell::Cell{D}, X, L, per) where {D}
+function _tessellate(cell::Cell{D}, X, L, per, w=zeros(length(X)); what="voronoi") where {D}
     msg = ""
     for (epsrel, vq) in ((1e-11, _VQ), (1e-9, _VQ), (1e-7, 1e-6), (1e-5, 1e-4))
-        cells = _voronoi_cells(X, L, per, epsrel)
+        cells = try
+            _voronoi_cells(X, L, per, epsrel, w)
+        catch e
+            e isa _EmptyCell || rethrow()
+            throw(ArgumentError("$what: the cell of seed $(e.i) is empty (its weight is too small for its neighbours)"))
+        end
         V, loops, nbrs, moved = _weld(cells, L, per, vq)
-        t = Tessellation{D}(cell, per, [x ./ L for x in X], V, loops, nbrs, moved)
+        t = Tessellation{D}(cell, per, [x ./ L for x in X], V, loops, nbrs, moved, collect(Float64, w))
         try
             _check_faces(t)
             grains(t)                                   # every grain must be a valid Polyhedron / Polygon
@@ -355,7 +374,7 @@ function _tessellate(cell::Cell{D}, X, L, per) where {D}
             msg = sprint(showerror, e)
         end
     end
-    throw(ArgumentError("voronoi: the seeds are too close to a degenerate configuration (e.g. a regular lattice " *
+    throw(ArgumentError("$what: the seeds are too close to a degenerate configuration (e.g. a regular lattice " *
                         "perturbed by much less than its spacing); use the exact lattice or perturb it by more than " *
                         "1e-3 of the spacing ($msg)"))
 end

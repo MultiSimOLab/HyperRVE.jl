@@ -296,6 +296,31 @@ about 1e-2 of the spacing give grain faces nearly coplanar with the cell faces, 
 fail to make periodic: use the exact lattice or a larger perturbation. Many grains give many
 interface groups (about 7 per grain).
 
+## Laguerre tessellations and dense packings
+
+`dense_spheres(cell; radius, fraction, n, min_gap, rng)` packs non-overlapping spheres (disks
+in 2D) up to a fraction of about 0.6 (2D: 0.8) by growing them from a dilute state while
+their overlaps are relaxed; `radius` follows the rules of `random_spheres` (a number, a vector
+or a sampler `rng -> r`). Past jamming it throws an error (`strict = false`: a warning and
+smaller spheres).
+
+`laguerre(cell; spheres)` is the power (radical Voronoi) tessellation of the sphere centres
+weighted by their radii: big spheres get big grains, and with equal radii it is the Voronoi
+tessellation. `volumes = :spheres` adjusts the weights so that every grain volume is exactly
+proportional to its sphere volume (or give a vector of volumes that adds up to the cell
+volume). A seed may lie outside its own grain. The result is a `Tessellation`: `grain_phases`,
+`pores`, `wall_thickness` and `foam_struts` work as for Voronoi, and `grain_diameters(t)`
+gives the equivalent diameters:
+
+```julia
+s = dense_spheres(cell; radius = rng -> 0.1 + 0.1rand(rng), fraction = 0.55, rng = 1)
+t = laguerre(cell; spheres = s, volumes = :spheres)
+rve = RVE(cell, grain_phases(t); matrix = nothing)
+```
+
+As with Voronoi, random tessellations have short edges that leave a few poor elements;
+`optimize = :netgen` helps.
+
 ## Void phases and foams
 
 `Phase(name, items; void = true)` makes empty space: what it covers is removed from the mesh

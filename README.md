@@ -14,7 +14,7 @@ HyperRVE.jl generates periodic meshes of representative volume elements (RVEs) f
 computational homogenisation, using the Gmsh Julia API and its OpenCASCADE kernel.
 A cell of any size and origin is filled with named phases built from primitives (spheres,
 ellipsoids, boxes, cylinders, capsules, fibres, polyhedra), boolean operations and transforms,
-or from generators: strut lattices, random packings, particle chains, Voronoi polycrystals and
+or from generators: strut lattices, random packings, particle chains, Voronoi and Laguerre polycrystals and
 foams. HyperRVE.jl creates
 the periodic images of every inclusion that crosses the cell boundary, assigns each piece to
 its phase, defines physical groups for phases, faces, edges and corners, imposes periodic
@@ -68,6 +68,7 @@ tpms(:gyroid; type = :sheet, density = 0.3)                                     
 grain_phases(voronoi(cell; n = 20, lloyd = 2, rng = 1))                                # polycrystal
 t = voronoi(cell; n = 8, rng = 1); pores(t; wall = wall_thickness(t, 0.15))            # closed foam
 foam_struts(voronoi(cell; seeds = [(0, 0, 0), (0.5, 0.5, 0.5)]); radius = 0.035)       # Kelvin foam
+grain_phases(laguerre(cell; spheres = dense_spheres(cell; radius = 0.08, fraction = 0.55, rng = 1)))  # Laguerre
 random_spheres(cell; radius = 0.1, fraction = 0.2, rng = 3)                            # random packing
 random_spheres(cell; radius = 0.05, n = 20, avoid = random_spheres(cell; radius = 0.12, n = 4, rng = 1))  # mixture
 random_spheres(cell; radius = 0.04, n = 30, cluster = (n = 3, radius = 0.2), rng = 2)  # clusters
