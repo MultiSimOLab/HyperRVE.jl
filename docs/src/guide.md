@@ -344,6 +344,24 @@ pores, and with few pores the diameters are scaled to fill the cell (a warning b
 The thin walls leave poor elements unless they are refined (a `Phase(:walls, Box(...); refine = f.wall)`
 with the pores as a void phase and `matrix = nothing`).
 
+### Windows and the fluid phase (acoustics)
+
+A closed-cell foam absorbs little sound; `open_pores(f; open_fraction, window, rng)` opens a
+window (a cylinder across the wall, of diameter `window` times the largest circle inscribed in
+the wall) in a fraction of the walls between pores, and returns the connected fluid, the
+closed pores and a report (windows, open area, percolation along each periodic direction,
+open porosity):
+
+```julia
+a = open_pores(f; open_fraction = 0.3, window = 0.4, rng = 2)
+a.report                                                   # percolates, open_porosity, windows_per_pore, ...
+rve = RVE(f.cell, Phase(:air, a.fluid); matrix = nothing)  # the fluid alone; wall: interface_air_void
+```
+
+Pores not connected to a network that percolates across the cell are closed (`a.closed`, a
+void phase with the solid); `isolated = :keep` keeps them in the fluid. Do not fuse the fluid
+phase.
+
 ## Void phases and foams
 
 `Phase(name, items; void = true)` makes empty space: what it covers is removed from the mesh

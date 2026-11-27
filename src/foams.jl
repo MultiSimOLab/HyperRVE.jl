@@ -180,8 +180,18 @@ function pores(t::Tessellation{D}; wall, rounding=0) where {D}
     w = Float64(wall)
     w >= 0 || throw(ArgumentError("pores: wall must be >= 0"))
     r = _check_rounding(rounding, "pores")
-    r > 0 && return _rounded_pores(t, w, r)
-    out = D == 3 ? Polyhedron[] : Polygon[]
+    items, lost = r > 0 ? _rounded_pores(t, w, r) : _polyhedral_pores(t, w)
+    lost > 0 && @warn "pores: $lost grains vanish with wall = $w"
+    out = r > 0 ? Geometry{D}[] : (D == 3 ? Polyhedron[] : Polygon[])
+    for g in items
+        append!(out, g)
+    end
+    return out
+end
+
+# the pores of every grain (empty for grains that vanish), and the number lost
+function _polyhedral_pores(t::Tessellation{D}, w) where {D}
+    items = [Geometry{D}[] for _ in eachindex(t.loops)]
     lost = 0
     V = prod(t.cell.size)
     for i in eachindex(t.loops)
@@ -194,9 +204,9 @@ function pores(t::Tessellation{D}; wall, rounding=0) where {D}
             try
                 if D == 3
                     v, f = _indexed(Q, 1e-9 * maximum(t.cell.size))
-                    push!(out, Polyhedron([t.cell.origin .+ p for p in v], f))
+                    push!(items[i], Polyhedron([t.cell.origin .+ p for p in v], f))
                 else
-                    push!(out, Polygon([t.cell.origin .+ p for p in Q.pts]))
+                    push!(items[i], Polygon([t.cell.origin .+ p for p in Q.pts]))
                 end
             catch e
                 e isa ArgumentError || rethrow()
@@ -204,8 +214,7 @@ function pores(t::Tessellation{D}; wall, rounding=0) where {D}
             end
         end
     end
-    lost > 0 && @warn "pores: $lost grains vanish with wall = $w"
-    return out
+    return items, lost
 end
 
 """
@@ -240,7 +249,7 @@ end
 # rounded pores: the pieces of each shrunk grain intersected with its ball (the ball is
 # rotated so that its seam and poles do not line up with the cell faces)
 function _rounded_pores(t::Tessellation{D}, w, r) where {D}
-    out = Geometry{D}[]
+    items = [Geometry{D}[] for _ in eachindex(t.loops)]
     lost = 0
     L = t.cell.size
     V = prod(L)
@@ -269,7 +278,7 @@ function _rounded_pores(t::Tessellation{D}, w, r) where {D}
             end
             # the ball contains the piece: the polyhedron; the piece contains the ball: the ball
             if maximum(p -> _norm(p .- cs), _bodyvertices(Q)) <= R
-                push!(out, body)
+                push!(items[i], body)
                 continue
             end
             planes, _ = _body_planes(Q)
@@ -285,12 +294,11 @@ function _rounded_pores(t::Tessellation{D}, w, r) where {D}
                 θ == 0 ? Disk(t.cell.origin .+ cs, R) : Rotate(Disk(t.cell.origin .+ cs, R); angle=θ)
             end
             if all(((n, b),) -> b - _dot(n, cs) >= R, planes)
-                push!(out, ball)
+                push!(items[i], ball)
             else
-                push!(out, Intersect(body, ball))
+                push!(items[i], Intersect(body, ball))
             end
         end
     end
-    lost > 0 && @warn "pores: $lost grains vanish with wall = $w"
-    return out
+    return items, lost
 end
