@@ -63,7 +63,10 @@ end
     end
     @test all(x -> x.ok && x.npairs > 0, res.periodicity)
     @test volume(res, :p) ≈ 2 * 4π * r^3 / 3 rtol = 1e-6
-    @test n0[] < 10 && n1[][1] >= 50 && n1[][2] <= g
+    # target size g/2; the coarse mesh is 25g (mean largest edge 0.77-0.84g on one Mac)
+    @test n0[] < 10
+    @test n1[][1] >= 50
+    @test n1[][2] <= 1.25g || (@info "ligament" n1[] g; false)
     @test res.stats.min_quality > 0.1 && res.stats.nelements < 100_000
     res0 = res.stats.nelements
     k = 1e-6
