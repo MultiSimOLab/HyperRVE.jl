@@ -27,6 +27,7 @@ export tessellation_edges, foam_struts, pores, wall_thickness
 export particle_chains
 export particle_array, laminate
 export plate_cells, plate_density, plate_thickness
+export tpms_level, tpms_density
 export chiral, rotating_squares, rotating_triangles
 export MeshOptions, InterfaceRefinement
 export generate, RVEMesh, write_mesh, view_mesh, close_gmsh, PeriodicityError
@@ -45,6 +46,7 @@ include("capsules.jl")
 include("voronoi.jl")
 include("foams.jl")
 include("plates.jl")
+include("tpms.jl")
 include("chains.jl")
 include("arrays.jl")
 include("auxetic.jl")

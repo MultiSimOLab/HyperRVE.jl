@@ -162,6 +162,20 @@ RVE(cell, Phase(:cells, cells; void = true); matrix = :plates)
 elastically isotropic SC + FCC lattice (`t_sc / t_fcc = 8√3/9`); other combinations need
 `ratio`. Thin plates need a mesh size of about half their thickness.
 
+## Triply periodic minimal surfaces (experimental)
+
+`tpms_level(kind; type, density, periods, resolution)` and `tpms_density(kind; type, level, ...)`
+relate the level of a TPMS solid to its relative density: `kind` is `:gyroid`, `:schwarz_p`,
+`:diamond`, `:iwp` or `:neovius`; `type = :network` is the solid `f ≤ level` and `:sheet` the
+wall `|f| ≤ level`. The solid is the faceted surface of a periodic marching-tetrahedra grid with
+`resolution` cubes per period (24 by default), smoothed onto the surface; the density is that of
+this faceted solid. Networks below their pinch-off (Schwarz P below about 0.21) and walls thinner
+than about two grid cubes raise an error.
+
+```julia
+tpms_level(:gyroid; type = :sheet, density = 0.3)      # ≈ 0.463
+```
+
 ## Random packings
 
 `random_spheres(cell; ...)`, `random_disks(cell; ...)` (2D) and `random_fibres(cell; axis, ...)`
