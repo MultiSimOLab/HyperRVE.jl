@@ -333,14 +333,6 @@ function _tpms_args(kind, type, periods, resolution, what)
     return Int(periods), Int(res)
 end
 
-# range of f over a period (sampled), for the admissible levels
-function _tpms_range(kind)
-    f = _TPMS_F[kind]
-    r = range(0, 2π; length=49)
-    vals = [f(x, y, z) for x in r, y in r, z in r]
-    return minimum(vals), maximum(vals)
-end
-
 # marched, smoothed and flipped surface of the solid in the unit cube (periodic in the three
 # directions); shift translates the level-set function (a fraction of the cell)
 function _tpms_surface(kind, type, level, n, N; snap=0.25, shift=0.0)
