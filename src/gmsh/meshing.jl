@@ -132,6 +132,7 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{Interf
     gmsh.option.setNumber("Mesh.Optimize", opts.optimize == :none ? 0 : 1)
     gmsh.option.setNumber("Mesh.OptimizeNetgen", opts.optimize == :netgen ? 1 : 0)
     gmsh.option.setNumber("Mesh.ElementOrder", 1)          # generation is always linear
+    ngaps = opts.gaps === nothing ? 0 : _install_gaps!(rve, frame, opts, H, hmin)
     try
         if D == 3 && opts.surface_algorithm == :default
             # Gmsh 4.15's Frontal-Delaunay surface mesher meshes B-spline surfaces (ellipsoids,
@@ -162,6 +163,8 @@ function mesh!(rve::RVE{D}, frame::Frame{D}, part::Partition, ifs::Vector{Interf
         alt = opts.algorithm == :delaunay ? "" : ", or try algorithm = :delaunay"
         error("Gmsh failed to mesh the RVE ($(e.msg)). Common causes: an inclusion crossing or " *
               "touching a face by a tiny amount (sliver), or a global size h much larger than the inclusions$alt.")
+    finally
+        ngaps > 0 && _remove_gaps!()
     end
     if opts.order == 2
         # before restore_frame!: curved mid-nodes are projected on the (normalised) CAD

@@ -1,7 +1,7 @@
 """
     MeshOptions(; h = nothing, hmin = nothing, hmax = nothing, growth = 1.3, curvature = nothing,
                 periodic_sizes = true, order = 1, curved = true, algorithm = :default,
-                surface_algorithm = :default, optimize = :auto, optimize_curved = :auto)
+                surface_algorithm = :default, optimize = :auto, optimize_curved = :auto, gaps = nothing)
 
 Global meshing options, all lengths in the units of the cell.
 
@@ -40,6 +40,10 @@ Global meshing options, all lengths in the units of the cell.
   periodic faces, so it is only accepted for cells without periodic directions; `:none`
   leaves the curved elements as projected (coarse meshes may then contain inverted elements:
   `generate` warns and `res.stats.ninverted` counts them).
+- `gaps`: refinement of the thin gaps between spheres or disks and between them and the cell
+  faces, so that a ligament gets `gaps` elements across instead of one flattened element:
+  a number of elements, `true` (2) or a [`GapRefinement`](@ref). Much cheaper than refining
+  the whole phase: the size follows the local width of the ligament.
 """
 struct MeshOptions
     h::Union{Nothing,Float64}
@@ -54,6 +58,7 @@ struct MeshOptions
     surface_algorithm::Symbol
     optimize::Symbol
     optimize_curved::Symbol
+    gaps::Union{Nothing,GapRefinement}
 end
 
 const _ALG3D = Dict(:delaunay => 1, :frontal => 4, :hxt => 10)
@@ -62,7 +67,7 @@ const _HO = Dict(:optimize => "HighOrder", :elastic => "HighOrderElastic")
 
 function MeshOptions(; h=nothing, hmin=nothing, hmax=nothing, growth=1.3, curvature=nothing,
                      periodic_sizes=true, order=1, curved=true, algorithm=:default,
-                     surface_algorithm=:default, optimize=:auto, optimize_curved=:auto)
+                     surface_algorithm=:default, optimize=:auto, optimize_curved=:auto, gaps=nothing)
     hocurved = order == 2 && curved
     curvature === nothing && (curvature = hocurved ? 12 : 6)
     _opt(x, n) = x === nothing ? nothing : _positive(x, n)
@@ -95,7 +100,7 @@ function MeshOptions(; h=nothing, hmin=nothing, hmax=nothing, growth=1.3, curvat
     oc != :none && !(order == 2 && curved) &&
         throw(ArgumentError("MeshOptions: optimize_curved = :$oc needs order = 2 and curved = true"))
     return MeshOptions(h, hmin, hmax, g, Int(curvature), Bool(periodic_sizes), Int(order), Bool(curved),
-                       alg, salg, opt, oc)
+                       alg, salg, opt, oc, _gaps(gaps))
 end
 
 "Copy of `o` with some fields replaced."

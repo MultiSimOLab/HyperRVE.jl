@@ -42,8 +42,9 @@ amplitude as extra clearance, which leaves a thin particle-free layer next to pe
 `stagger = :alternate` alternates neighbouring chains only for even counts along periodic
 directions, and only along a periodic chain axis. Along free lateral faces the chains may be
 cut by the face, as the inclusions of [`random_spheres`](@ref).
-Mesh: the ligaments between particles of a chain have the width `gap`; refine the phase with
-`refine = gap / 2` (two elements across), keep `gap >= 0.1 r`.
+Mesh: the ligaments between particles of a chain have the width `gap`; `MeshOptions(gaps = 2)`
+puts two elements across every thin gap and keeps the rest coarse (refining the whole phase with
+`refine = gap / 2` also works but costs 10–50 times more elements).
 """
 function particle_chains(cell::Cell{D}; axis=D, radius, gap, fraction=nothing, n_chains=nothing,
                          arrangement=:random, chain_gap=:auto, face_gap=:auto, fit=:gap, stagger=:random,
