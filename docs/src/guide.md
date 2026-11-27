@@ -330,6 +330,15 @@ From a tessellation `t = voronoi(cell; n, rng)`:
 - closed cells: `pores(t; wall)` are the grains shrunk by `wall / 2`, and
   `wall_thickness(t, density)` the wall for a relative density (exact):
   `RVE(cell, Phase(:pores, pores(t; wall = w); void = true); matrix = :walls)`;
+- rounded closed cells (metal foams): `pores(t; wall, rounding)` intersects each pore with a
+  ball centred at its centroid, of radius its equivalent radius divided by `rounding` (`0`:
+  polyhedra; `1`: nearly spherical pores with thick nodes and edges and thin flat walls only
+  where two pores meet). Give the density and the wall and solve the rounding,
+  `r = pore_rounding(t, density; wall)`, or give the rounding and solve the wall,
+  `wall_thickness(t, density; rounding)`; the volumes are integrated numerically (about 1e-3
+  of the density). The ball radius is moved by up to 0.5 % away from tangency with pore and
+  cell features; Gmsh may still fail to match a periodic face in a few percent of the cells,
+  which `generate(...; retries = 3)` handles by meshing the same material shifted slightly;
 - open cells: `foam_struts(t; radius)` are the edges as struts (short edges merged), for a
   fused phase: `RVE(cell, Phase(:foam, foam_struts(t; radius = 0.02); fuse = true); matrix = nothing)`
   (fully periodic tessellations; practical for about 5–20 cells). The geometry is exact, but

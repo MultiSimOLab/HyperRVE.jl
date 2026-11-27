@@ -126,9 +126,9 @@ _poly_volume(P::_Poly2) = abs(_polygon_area(P.pts))
 
 # pieces of a body (cell-local clipping polyhedron/polygon) inside the cell: along directions
 # where the tessellation is periodic but the cell is not, its translates clipped to the cell
-function _cell_pieces(t::Tessellation{D}, P) where {D}
+function _cell_pieces(t::Tessellation{D}, P; shifts::Bool=false) where {D}
     cut = [d for d in 1:D if t.periodic[d] && !t.cell.periodic[d]]
-    isempty(cut) && return [P]
+    isempty(cut) && return shifts ? [(P, ntuple(_ -> 0, D))] : [P]
     L = t.cell.size
     eps = 1e-11 * maximum(L)
     out = Any[]
@@ -139,25 +139,35 @@ function _cell_pieces(t::Tessellation{D}, P) where {D}
             _clip!(Q, n, c, (0, ntuple(_ -> 0, D)), eps)
         end
         (D == 3 ? length(Q.faces) >= 4 : length(Q.pts) >= 3) || continue
-        _poly_volume(Q) > 1e-12 * prod(L) && push!(out, Q)
+        _poly_volume(Q) > 1e-12 * prod(L) && push!(out, shifts ? (Q, s) : Q)
     end
     return out
 end
 
 """
-    pores(t; wall) -> Vector{Polyhedron} (3D) or Vector{Polygon} (2D)
+    pores(t; wall, rounding = 0) -> Vector{Polyhedron} (3D) or Vector{Polygon} (2D), or rounded pores
 
 The grains shrunk by `wall / 2` on every face: the pores of a closed-cell foam whose walls
 (the rest of the cell) have thickness `wall`. Grains that vanish are skipped with a warning.
+
+`rounding` in `[0, 1]` rounds the pores: each one is intersected with a ball centred at its
+centroid, of radius its equivalent radius divided by `rounding`. `0` keeps the polyhedra;
+small values only round the corners; `1` gives nearly spherical pores with thick nodes and
+edges and flat thin walls only where two pores meet (as in metal foams). Rounding removes
+solid from the pores, so for a given density the wall gets thinner: [`pore_rounding`](@ref)
+gives the rounding for a density and a wall, and `wall_thickness(t, density; rounding)` the
+wall for a density and a rounding.
 Use `RVE(cell, Phase(:pores, pores(t; wall); void = true); matrix = :walls)` for empty pores,
 or without `void` for a two-phase material. [`wall_thickness`](@ref) gives the wall for a
 relative density. To refine the pore surfaces, make the walls an explicit phase:
 `[Phase(:walls, Box(cell.origin, cell.size); refine = w / 2), Phase(:pores, pores(t; wall = w); void = true)]`
 with `matrix = nothing`. At free faces of the cell the wall is `wall / 2` thick.
 """
-function pores(t::Tessellation{D}; wall) where {D}
+function pores(t::Tessellation{D}; wall, rounding=0) where {D}
     w = Float64(wall)
     w >= 0 || throw(ArgumentError("pores: wall must be >= 0"))
+    r = _check_rounding(rounding, "pores")
+    r > 0 && return _rounded_pores(t, w, r)
     out = D == 3 ? Polyhedron[] : Polygon[]
     lost = 0
     V = prod(t.cell.size)
@@ -186,17 +196,22 @@ function pores(t::Tessellation{D}; wall) where {D}
 end
 
 """
-    wall_thickness(t, density) -> wall
+    wall_thickness(t, density; rounding = 0) -> wall
 
-Wall thickness of the closed-cell foam [`pores`](@ref)`(t; wall)` with the given relative
-density (volume fraction of the walls), exact for the tessellation (bisection on the pore
-volumes).
+Wall thickness of the closed-cell foam [`pores`](@ref)`(t; wall, rounding)` with the given
+relative density (volume fraction of the walls): exact for polyhedral pores, about 1e-4 of the
+pore volume for rounded pores (bisection on the pore volumes). With rounding, a density below
+that of the rounded foam with no wall is out of reach (error).
 """
-function wall_thickness(t::Tessellation{D}, density::Real) where {D}
+function wall_thickness(t::Tessellation{D}, density::Real; rounding=0) where {D}
     0 < density < 1 || throw(ArgumentError("wall_thickness: density must be in (0, 1)"))
-    V = prod(t.cell.size)
-    pv(P) = P === nothing ? 0.0 : sum(_poly_volume, _cell_pieces(t, P); init=0.0)
-    ρ(w) = 1 - sum(pv(_shrunk(t, i, w / 2)) for i in eachindex(t.loops)) / V
+    r = _check_rounding(rounding, "wall_thickness")
+    ρ(w) = _foam_density(t, w, r)
+    if r > 0
+        ρ0 = ρ(0.0)
+        density < ρ0 && throw(ArgumentError(@sprintf("wall_thickness: rounding = %.4g leaves a density of %.4g with no wall, above %.4g; reduce rounding",
+                                                     r, ρ0, density)))
+    end
     lo, hi = 0.0, minimum(t.cell.size)
     for _ in 1:200
         m = (lo + hi) / 2
@@ -204,4 +219,59 @@ function wall_thickness(t::Tessellation{D}, density::Real) where {D}
         hi - lo < 1e-13 * maximum(t.cell.size) && break
     end
     return (lo + hi) / 2
+end
+
+# rounded pores: the pieces of each shrunk grain intersected with its ball (the ball is
+# rotated so that its seam and poles do not line up with the cell faces)
+function _rounded_pores(t::Tessellation{D}, w, r) where {D}
+    out = Geometry{D}[]
+    lost = 0
+    L = t.cell.size
+    V = prod(L)
+    for i in eachindex(t.loops)
+        P = _shrunk(t, i, w / 2)
+        if P === nothing || _poly_volume(P) <= 1e-9 * V
+            lost += 1
+            continue
+        end
+        c, R = _pore_ball(P, r, L)
+        for (Q, s) in _cell_pieces(t, P; shifts=true)
+            cs = c .+ s .* L
+            # a piece of a cut pore that the ball does not reach (or only grazes)
+            _ball_volume(Q, cs, R) > 1e-9 * V || continue
+            body = try
+                if D == 3
+                    v, f = _indexed(Q, 1e-9 * maximum(L))
+                    Polyhedron([t.cell.origin .+ p for p in v], f)
+                else
+                    Polygon([t.cell.origin .+ p for p in Q.pts])
+                end
+            catch e
+                e isa ArgumentError || rethrow()
+                lost += 1
+                continue
+            end
+            # the ball contains the piece: the polyhedron; the piece contains the ball: the ball
+            if maximum(p -> _norm(p .- cs), _bodyvertices(Q)) <= R
+                push!(out, body)
+                continue
+            end
+            planes, _ = _body_planes(Q)
+            ball = if D == 3
+                # the cell faces count as planes too (the ball may cross them)
+                fp = [(ntuple(k -> k == d ? sg : 0.0, 3), sg * x) for d in 1:3 for (sg, x) in ((1.0, L[d]), (-1.0, 0.0))]
+                ax, θ = _ball_rotation(cs, R, vcat(planes, fp))
+                θ == 0 ? Sphere(t.cell.origin .+ cs, R) : Rotate(Sphere(t.cell.origin .+ cs, R); axis=ax, angle=θ)
+            else
+                Disk(t.cell.origin .+ cs, R)
+            end
+            if all(((n, b),) -> b - _dot(n, cs) >= R, planes)
+                push!(out, ball)
+            else
+                push!(out, Intersect(body, ball))
+            end
+        end
+    end
+    lost > 0 && @warn "pores: $lost grains vanish with wall = $w"
+    return out
 end

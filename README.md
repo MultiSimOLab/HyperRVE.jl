@@ -67,6 +67,7 @@ hollow_lattice(cell, :octet; radius = 0.06, wall = 0.02)                        
 tpms(:gyroid; type = :sheet, density = 0.3)                                            # TPMS (experimental)
 grain_phases(voronoi(cell; n = 20, lloyd = 2, rng = 1))                                # polycrystal
 t = voronoi(cell; n = 8, rng = 1); pores(t; wall = wall_thickness(t, 0.15))            # closed foam
+pores(t; wall = 0.01, rounding = pore_rounding(t, 0.15; wall = 0.01))                # rounded pores (metal foam)
 foam_struts(voronoi(cell; seeds = [(0, 0, 0), (0.5, 0.5, 0.5)]); radius = 0.035)       # Kelvin foam
 grain_phases(laguerre(cell; spheres = dense_spheres(cell; radius = 0.08, fraction = 0.55, rng = 1)))  # Laguerre
 random_spheres(cell; radius = 0.1, fraction = 0.2, rng = 3)                            # random packing

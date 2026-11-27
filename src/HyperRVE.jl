@@ -24,7 +24,7 @@ export hollow_struts, hollow_lattice
 export random_spheres, random_disks, random_fibres, random_capsules, orientation_tensor
 export Tessellation, voronoi, grains, grain_phases, grain_volumes
 export dense_spheres, laguerre, grain_diameters
-export tessellation_edges, foam_struts, pores, wall_thickness
+export tessellation_edges, foam_struts, pores, wall_thickness, pore_rounding
 export particle_chains
 export particle_array, laminate
 export plate_cells, plate_density, plate_thickness
@@ -48,6 +48,7 @@ include("capsules.jl")
 include("voronoi.jl")
 include("foams.jl")
 include("laguerre.jl")
+include("rounding.jl")
 include("plates.jl")
 include("tpms.jl")
 include("chains.jl")
