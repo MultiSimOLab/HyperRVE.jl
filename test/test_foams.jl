@@ -89,3 +89,18 @@ end
     @test_throws ErrorException interface_tag(r, :matrix, :s)
     @test_logs (:warn, r"min_length") match_mode = :any foam_struts(voronoi(unitcell(); n=2, rng=1); radius=0.02, min_length=0.45)
 end
+
+@testset "closed foam in a long thin cell: no pore lost" begin
+    # grains of a needle cell leave vertices closer than OCC's tolerance after the shrink
+    Ls = (1.0, 0.03, 0.03)
+    c = Cell(Ls)
+    r = HyperRVE.Random.Xoshiro(3)
+    P = [ntuple(d -> rand(r) * Ls[d], 3) for _ in 1:20]
+    t = voronoi(c; seeds=P)
+    w = wall_thickness(t, 0.15)
+    p = @test_logs pores(t; wall=w)                            # no grain lost, no warning
+    @test length(p) == 20
+    @test 1 - sum(q -> abs(HyperRVE._polyhedron_volume(q.vertices, q.faces)), p) / prod(Ls) ≈ 0.15 rtol = 1e-4
+    res = generate(RVE(c, Phase(:pores, p; void=true); matrix=:walls); geometry_only=true)
+    @test volume_fraction(res, :walls) ≈ 0.15 rtol = 1e-4
+end
