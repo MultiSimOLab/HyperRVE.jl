@@ -6,7 +6,7 @@ dist = truncated_lognormal(4.0; cv = 0.35, min = 2.0, max = 8.0)
 f = laguerre_foam(; n = 16, diameter = dist, porosity = 0.9, wall = 0.1, rng = 1)   # rounded pores
 a = open_pores(f; open_fraction = 0.3, window = 0.4, rng = 3)    # 30 % of the walls get a window
 r = a.report
-println(r.windows, " windows (", round(r.open_area_fraction; digits = 3), " of the wall area), ",
+println(r.windows, " windows (openings: ", round(r.open_area_fraction; digits = 3), " of the wall area), ",
         round(r.windows_per_pore; digits = 1), " per pore; percolates ", r.percolates,
         "; open porosity ", round(r.open_porosity; digits = 4), ", ", r.closed_pores, " closed pores")
 

@@ -347,8 +347,8 @@ with the pores as a void phase and `matrix = nothing`).
 ### Windows and the fluid phase (acoustics)
 
 A closed-cell foam absorbs little sound; `open_pores(f; open_fraction, window, rng)` opens a
-window (a cylinder across the wall, of diameter `window` times the largest circle inscribed in
-the wall) in a fraction of the walls between pores, and returns the connected fluid, the
+window (a cylinder across the wall, of radius `window · (ρ − wall)` with `ρ` the radius of the
+largest circle inscribed in the wall) in a fraction of the walls between pores, and returns the connected fluid, the
 closed pores and a report (windows, open area, percolation along each periodic direction,
 open porosity):
 
@@ -358,8 +358,8 @@ a.report                                                   # percolates, open_po
 rve = RVE(f.cell, Phase(:air, a.fluid); matrix = nothing)  # the fluid alone; wall: interface_air_void
 ```
 
-Pores not connected to a network that percolates across the cell are closed (`a.closed`, a
-void phase with the solid); `isolated = :keep` keeps them in the fluid. Do not fuse the fluid
+The fluid is the largest network that percolates across the cell; the other pores are closed
+(`a.closed`, a void phase with the solid); `isolated = :keep` keeps them in the fluid. Do not fuse the fluid
 phase.
 
 ## Void phases and foams
