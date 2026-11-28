@@ -89,3 +89,24 @@ end
     @test_throws ErrorException interface_tag(r, :matrix, :s)
     @test_logs (:warn, r"min_length") match_mode = :any foam_struts(voronoi(unitcell(); n=2, rng=1); radius=0.02, min_length=0.45)
 end
+
+@testset "closed foams in long thin cells: no pore lost" begin
+    # grains of needle cells leave vertices and edges closer than OCC's tolerance, and slightly
+    # non-planar faces, after the shrink: merged and triangulated, no pore is dropped
+    for Ls in ((1.0, 0.03, 0.03), (1.0, 0.01, 0.01)), seed in (1, 3, 4, 9, 10, 12), ρ in (0.15, 0.4)
+        c = Cell(Ls)
+        r = HyperRVE.Random.Xoshiro(seed)
+        t = voronoi(c; seeds=[ntuple(d -> rand(r) * Ls[d], 3) for _ in 1:20])
+        p = pores(t; wall=wall_thickness(t, ρ))
+        @test length(p) == 20
+        @test 1 - sum(q -> abs(HyperRVE._polyhedron_volume(q.vertices, q.faces)), p) / prod(Ls) ≈ ρ rtol = 1e-4
+    end
+    # the geometry builds (edges above 1e-7 of the cell), also scaled and shifted
+    for (Ls, o) in (((1.0, 0.03, 0.03), (0.0, 0.0, 0.0)), ((1e-3, 3e-5, 3e-5), (2.0, -1.0, 5.0)))
+        c = Cell(Ls; origin=o)
+        r = HyperRVE.Random.Xoshiro(1)
+        t = voronoi(c; seeds=[o .+ ntuple(d -> rand(r) * Ls[d], 3) for _ in 1:20])
+        res = generate(RVE(c, Phase(:pores, pores(t; wall=wall_thickness(t, 0.15)); void=true); matrix=:walls); geometry_only=true)
+        @test volume_fraction(res, :walls) ≈ 0.15 rtol = 1e-4
+    end
+end

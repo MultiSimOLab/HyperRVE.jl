@@ -203,8 +203,7 @@ function _polyhedral_pores(t::Tessellation{D}, w) where {D}
         for Q in _cell_pieces(t, P)
             try
                 if D == 3
-                    v, f = _indexed(Q, 1e-9 * maximum(t.cell.size))
-                    push!(items[i], Polyhedron([t.cell.origin .+ p for p in v], f))
+                    push!(items[i], _pore_polyhedron(Q, t.cell))
                 else
                     push!(items[i], Polygon([t.cell.origin .+ p for p in Q.pts]))
                 end
@@ -266,8 +265,7 @@ function _rounded_pores(t::Tessellation{D}, w, r) where {D}
             _ball_volume(Q, cs, R) > 1e-9 * V || continue
             body = try
                 if D == 3
-                    v, f = _indexed(Q, 1e-9 * maximum(L))
-                    Polyhedron([t.cell.origin .+ p for p in v], f)
+                    _pore_polyhedron(Q, t.cell)
                 else
                     Polygon([t.cell.origin .+ p for p in Q.pts])
                 end
@@ -301,4 +299,67 @@ function _rounded_pores(t::Tessellation{D}, w, r) where {D}
         end
     end
     return items, lost
+end
+
+# a clipped pore as a Polyhedron. Long thin cells leave vertices (and so edges) closer than
+# OCC's tolerance, which the geometry build rejects (edges shorter than 1e-7 of the cell):
+# vertices closer than 2e-7 of the cell are merged, repeated indices removed from the faces,
+# and the faces with a merged vertex split into triangles.
+function _pore_polyhedron(Q::_Poly3, cell)
+    v, f = _indexed(Q, 1e-9 * maximum(cell.size))
+    v, f = _merge_close(v, f, 2e-7 * maximum(cell.size))
+    return Polyhedron([cell.origin .+ p for p in v], f)
+end
+
+# a face loop that deviates from its plane by more than tol (Polyhedron accepts 1e-9 of its size)
+function _nonplanar(v, g, tol)
+    n = _face_normal(v, g)
+    nn = _norm(n)
+    nn > 0 || return true
+    u = n ./ nn
+    return any(i -> abs(_dot(v[i] .- v[g[1]], u)) > tol, g)
+end
+
+function _merge_close(v::Vector{NTuple{3,Float64}}, f::Vector{Vector{Int}}, tol)
+    n = length(v)
+    parent = collect(1:n)
+    findr(i) = (while parent[i] != i; parent[i] = parent[parent[i]]; i = parent[i]; end; i)
+    merged = false
+    for i in 1:n, j in i+1:n
+        if _norm(v[i] .- v[j]) < tol
+            a, b = findr(i), findr(j)
+            a != b && (parent[max(a, b)] = min(a, b); merged = true)
+        end
+    end
+    roots = unique(findr(i) for i in 1:n)
+    id = Dict(r => k for (k, r) in enumerate(roots))
+    cnt = zeros(Int, length(roots))
+    pos = [(0.0, 0.0, 0.0) for _ in roots]
+    for i in 1:n
+        k = id[findr(i)]
+        cnt[k] += 1
+        pos[k] = pos[k] .+ v[i]
+    end
+    pos = [pos[k] ./ cnt[k] for k in eachindex(pos)]
+    sz = maximum(k -> maximum(p -> p[k], pos) - minimum(p -> p[k], pos), 1:3)
+    faces = Vector{Int}[]
+    for face in f
+        g = Int[]
+        for i in face
+            k = id[findr(i)]
+            (isempty(g) || g[end] != k) && push!(g, k)
+        end
+        length(g) > 1 && g[end] == g[1] && pop!(g)
+        length(unique(g)) >= 3 || continue
+        if length(g) > 3 && (length(unique(g)) < length(g) || any(i -> cnt[id[findr(i)]] > 1, face) ||
+                             _nonplanar(pos, g, 1e-10 * sz))
+            g = unique(g)
+            for k in 2:length(g)-1
+                push!(faces, [g[1], g[k], g[k+1]])
+            end
+        else
+            push!(faces, g)
+        end
+    end
+    return pos, faces
 end
