@@ -90,4 +90,44 @@ using HyperRVE, Test, Random
     @test_throws r"only 3D" perforate(laguerre_foam(Cell((20.0, 20.0)); diameter=3.0, porosity=0.85, rng=1); diameter=1.0)
     @test_logs (:warn, r"wider than the mean pore") match_mode = :any perforate(f; diameter=4.5, spacing=10.0)
     @test_throws r"fluid is empty" foam_phases((fluid=Geometry{3}[], closed=Geometry{3}[]))
+    @test_throws r"diameter" perforate(f; diameter=true)
+    # spacing snapped to divide the cell exactly; holes on a free face: half of their section
+    a9 = perforate(f; diameter=1.0, spacing=3.3333333)
+    @test a9.report.holes == 9 && a9.report.spacing == (10 / 3, 10 / 3)
+    @test a9.report.positions[end][1] ≈ 2.5 * (10 / 3)
+    cx = Cell((10.0, 10.0, 10.0); periodic=(false, true, true))
+    fx = laguerre_foam(cx; diameter=dist, porosity=0.9, rng=1)
+    @test perforate(fx; diameter=1.5, position=(0.0, 5.0)).report.perforation_ratio ≈ π * 0.75^2 / 2 / 100 rtol = 1e-4
+    @test only(perforate(f; diameter=1.5, position=(-1e-17, 5.0)).report.positions)[1] == 0.0
+    # axis 2 in a non-cubic cell: spacing in the order of the in-plane directions (1, 3)
+    cb = Cell((12.0, 8.0, 6.0))
+    fb = laguerre_foam(cb; diameter=dist, porosity=0.9, rng=2)
+    ab2 = perforate(fb; diameter=1.0, spacing=(4.0, 3.0), axis=2)
+    @test ab2.report.holes == 6 && ab2.report.positions[1] == (2.0, 0.0, 1.5)
+    @test all(h -> h.direction == (0.0, 1.0, 0.0), ab2.holes) && ab2.report.percolates[2]
+    # :keep with windows: every pore in the fluid, networks counts those connected to holes
+    awk = perforate(f; diameter=1.5, windows=(open_fraction=0.05,), isolated=:keep, rng=3)
+    @test isempty(awk.closed) && awk.report.open_pores == N && awk.report.networks >= 1
+    # hole-window edges: a hole image across x = L touches a window of grain 1 (offsets)
+    adj = [Tuple{Int,NTuple{3,Int}}[] for _ in 1:N+1]
+    win = (1, 2, (0, 1, 0), (9.9, 5.0, 5.0), (0.0, 0.0, 1.0), 0.3, 0.2, 0.2)
+    HyperRVE._hole_window_edges!(adj, f.tessellation, [win], [(0.2, 5.0, 0.0)], 0.5, 3)
+    @test Set(adj[N+1]) == Set([(1, (-1, 0, 0)), (2, (-1, 1, 0))])
+    @test (N + 1, (1, 0, 0)) in adj[1] && (N + 1, (1, -1, 0)) in adj[2]
+    adj0 = [Tuple{Int,NTuple{3,Int}}[] for _ in 1:N+1]
+    HyperRVE._hole_window_edges!(adj0, f.tessellation, [win], [(5.0, 5.0, 0.0)], 0.5, 3)
+    @test isempty(adj0[N+1])
+    # holes much wider than the pores: small pores inside a hole are crossed (not left closed over
+    # the air): the air with the solid equals the air alone
+    fs = laguerre_foam(c; diameter=truncated_lognormal(1.6; cv=0.6, min=0.5, max=6.0), porosity=0.85, rng=3)
+    as = @test_logs (:warn, r"wider") match_mode = :any perforate(fs; diameter=4.0, position=(6.984, 4.963))
+    v1 = volume_fraction(generate(RVE(c, foam_phases(as); matrix=:walls); geometry_only=true), :air)
+    v2 = volume_fraction(generate(RVE(c, Phase(:air, as.fluid); matrix=nothing); geometry_only=true), :air)
+    @test abs(v1 - v2) < 1e-4          # before: 1.8e-4 (two pores inside the hole); grazed lenses ~4e-5
+    # retries: a hole on the cell edge shifted into the band that does not mesh is skipped
+    HyperRVE._FORCED_FAILURES[] = 1
+    pe = perforate(f; diameter=0.64, position=(0.0, 0.0))
+    re = @test_logs (:warn, r"shifted") match_mode = :any generate(RVE(c, foam_phases(pe); matrix=:walls); h=1.0, retries=3)
+    HyperRVE._FORCED_FAILURES[] = 0
+    @test all(x -> x.ok, re.periodicity)
 end

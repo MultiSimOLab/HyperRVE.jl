@@ -25,21 +25,25 @@ solid; every pore a hole crosses joins the fluid.
   the other pores are returned in `closed`. `:keep` puts every pore in `fluid`.
 
 A pore counts as crossed when a hole goes clearly into it (to 0.95 of its radius); a pore it
-only grazes stays as it is (`report.grazed_pores`). `fluid` (pores, windows and holes, which
+only grazes stays closed (`report.grazed_pores`), even if the hole cuts a thin lens off it. `fluid` (pores, windows and holes, which
 overlap) and `closed` are meshed as with `open_pores`, e.g. `RVE(f.cell, foam_phases(a);
 matrix = :aluminium)`, or `RVE(f.cell, Phase(:air, a.fluid); matrix = nothing)` for the fluid
-alone; do not fuse it.
+alone; do not fuse it. The fluid alone of holes with windows may fail to mesh (a Gmsh boundary
+error, as for `open_pores`); a smaller `h`, `MeshOptions(surface_algorithm = :meshadapt)` or
+meshing it with the solid usually helps. `retries` in `generate` also moves the holes: a shift
+that brings one too close to a face is skipped.
 
 `report`: the holes, their diameter, spacing, axis, positions (absolute) and the perforation
-ratio (hole area over the cell section), the pores crossed and grazed, the separate fluid
-networks (a warning if more than one), whether the fluid percolates along each periodic
+ratio (hole area inside the cell over the cell section), the pores crossed and grazed, the
+separate networks connected to the holes (a warning if more than one; with `:keep` the
+unconnected pores are in the fluid too), whether some of them percolates along each periodic
 direction, the open and closed pores, the open porosity (pores only) and the porosity, and
 the windows with their diameters and lengths.
 """
 function perforate(f::Foam{3}; diameter::Real, spacing=nothing, axis::Integer=3, position=:center,
                    windows=nothing, isolated::Symbol=:closed, rng=Random.default_rng())
     axis in 1:3 || throw(ArgumentError("perforate: axis must be 1, 2 or 3"))
-    diameter > 0 && isfinite(diameter) || throw(ArgumentError("perforate: diameter must be positive and finite"))
+    !(diameter isa Bool) && diameter > 0 && isfinite(diameter) || throw(ArgumentError("perforate: diameter must be a positive finite number"))
     isolated in (:closed, :keep) || throw(ArgumentError("perforate: isolated must be :closed or :keep"))
     r = _rng(rng)
     t = f.tessellation
@@ -91,7 +95,7 @@ function perforate(f::Foam{3}; diameter::Real, spacing=nothing, axis::Integer=3,
     append!(fluid, holes)
     V = prod(L)
     report = (holes=H, diameter=Float64(diameter), spacing=sp, axis=Int(axis), positions=[t.cell.origin .+ p for p in pts],
-              perforation_ratio=H * π * rh^2 / (L[ab[1]] * L[ab[2]]), crossed_pores=count(crossed),
+              perforation_ratio=sum(p -> _hole_area(p, rh, L, ab, per), pts) / (L[ab[1]] * L[ab[2]]), crossed_pores=count(crossed),
               grazed_pores=count(grazed .& .!crossed), networks=length(hc), percolates=fluidperc,
               open_pores=count(keep), closed_pores=count(g.alive) - count(keep),
               open_porosity=sum(g.pv[keep]; init=0.0) / V, porosity=sum(g.pv) / V,
@@ -115,7 +119,25 @@ function _hole_spacing(spacing, L, ab)
                                          s[k], L[d], d, join((@sprintf("%.6g", x) for x in near), " or "))))
         end
     end
-    return s
+    # exactly periodic lattice
+    return (L[ab[1]] / round(L[ab[1]] / s[1]), L[ab[2]] / round(L[ab[2]] / s[2]))
+end
+
+# section of a hole inside the cell (a hole on a free face is cut by it)
+function _hole_area(p, rh, L, ab, per)
+    all(d -> per[d] || rh <= p[d] <= L[d] - rh, ab) && return π * rh^2
+    a, b = ab
+    clip(x, d) = per[d] ? x : clamp(x, 0.0, L[d])
+    n = 4000
+    dx = 2rh / n
+    A = 0.0
+    for k in 1:n
+        x = p[a] - rh + (k - 0.5) * dx
+        (per[a] || 0 <= x <= L[a]) || continue
+        hh = sqrt(max(0.0, rh^2 - (x - p[a])^2))
+        A += (clip(p[b] + hh, b) - clip(p[b] - hh, b)) * dx
+    end
+    return A
 end
 
 # a hole axis between 0.5 and 1.25 radii from a cell face parallel to it does not mesh
@@ -131,9 +153,9 @@ function _hole_origin(position, sp, rh, r)
         end
         throw(ArgumentError("perforate: no random position keeps the holes away from the cell faces"))
     elseif (position isa Tuple || position isa AbstractVector) && length(position) == 2 && all(x -> x isa Real && isfinite(x), position)
-        u = (mod(Float64(position[1]), sp[1]), mod(Float64(position[2]), sp[2]))
+        u = ntuple(k -> (x = mod(Float64(position[k]), sp[k]); x > sp[k] * (1 - 1e-12) ? 0.0 : x), 2)
         (_near_face(u[1], sp[1], rh) || _near_face(u[2], sp[2], rh)) &&
-            throw(ArgumentError(@sprintf("perforate: a hole axis at %.4g–%.4g (0.5–1.25 radii) from a cell face does not mesh; move the holes onto the face or further from it",
+            throw(ArgumentError(@sprintf("perforate: a hole axis at %.4g–%.4g (0.5–1.25 radii) from a cell face parallel to it does not mesh; move the holes onto the face or further from it",
                                          0.5rh, 1.25rh)))
         return u
     end
@@ -151,27 +173,27 @@ end
 _shifts(per) = [(a, b, c) for a in (per[1] ? (-1:1) : (0:0)), b in (per[2] ? (-1:1) : (0:0)), c in (per[3] ? (-1:1) : (0:0))]
 
 # pores crossed (to 0.95 of the hole radius) and grazed (to 1.2 radii) by each hole, sampled on
-# rings along its axis; an edge hole -> pore (with the lattice offset of the pore image) per
-# crossing
+# rings along its axis at a step relative to the hole and to the pore (a pore much smaller than
+# the hole may lie inside it), and by the pore centre; an edge hole -> pore (with the lattice
+# offset of the pore image) per crossing
 function _hole_crossings!(adj, t, g, pts, rh, axis)
     L = t.cell.size
     N = length(t.loops)
     per = t.cell.periodic
     ab = Tuple(d for d in 1:3 if d != axis)
-    # bounding ball of each Laguerre cell (cell-local)
+    # bounding ball of each Laguerre cell (cell-local) and equivalent pore diameter
     bc = Vector{NTuple{3,Float64}}(undef, N)
     bR = zeros(N)
+    deq = zeros(N)
     for i in 1:N
         g.alive[i] || continue
         V = [_vpos(t, vo) for f in t.loops[i] for vo in f]
         c = reduce(.+, V) ./ length(V)
         bc[i] = c
         bR[i] = maximum(v -> _norm(v .- c), V)
+        deq[i] = cbrt(6 * g.pv[i] / π)
     end
-    radii = (0.0, 0.25, 0.5, 0.75, 0.95, 1.05, 1.2) .* rh
-    m = 16
-    dz = rh / 4
-    nz = max(2, ceil(Int, L[axis] / dz) + 1)
+    point(p, z, x, y) = ntuple(d -> d == axis ? z : d == ab[1] ? p[d] + x : d == ab[2] ? p[d] + y : p[d], 3)
     crossed = falses(N)
     grazed = falses(N)
     for (h, p) in enumerate(pts), i in 1:N, s in _shifts(per)
@@ -183,18 +205,17 @@ function _hole_crossings!(adj, t, g, pts, rh, axis)
         zhi = min(L[axis], c[axis] + bR[i])
         zlo <= zhi || continue
         sL = s .* L
-        best = Inf
-        for z in range(0.0, L[axis]; length=nz)
-            zlo - dz <= z <= zhi + dz || continue
+        δ = min(rh, deq[i]) / 4
+        nr = max(4, ceil(Int, 0.95rh / δ))
+        radii = (range(0.0, 0.95rh; length=nr + 1)..., 1.05rh, 1.2rh)
+        m = max(16, ceil(Int, 2π * 0.95rh / δ))
+        best = dxy <= 0.95rh && zlo <= c[axis] <= zhi && _inpore(g, c, i, sL) ? dxy : Inf
+        for z in range(zlo, zhi; length=max(2, ceil(Int, (zhi - zlo) / δ) + 1))
             for ρ in radii
                 ρ < best || break
                 for k in 0:(ρ == 0 ? 0 : m - 1)
-                    q = [p...]
-                    q[axis] = z
-                    q[ab[1]] += ρ * cos(2π * k / m)
-                    q[ab[2]] += ρ * sin(2π * k / m)
-                    if _inpore(g, Tuple(q), i, sL)
-                        best = min(best, ρ)
+                    if _inpore(g, point(p, z, ρ * cos(2π * k / m), ρ * sin(2π * k / m)), i, sL)
+                        best = ρ
                         break
                     end
                 end

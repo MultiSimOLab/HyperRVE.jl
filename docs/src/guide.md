@@ -379,7 +379,9 @@ rve = RVE(f.cell, foam_phases(a); matrix = :aluminium)               # air, clos
 parallel to it does not mesh and is refused. `windows` takes the keywords of `open_pores`, and
 the connectivity is computed with pores, windows and holes together (separate holes without
 windows make separate fluid networks, with a warning). `foam_phases(a)` builds the air phase
-and, if there are closed pores, the void phase after it.
+and, if there are closed pores, the void phase after it. The fluid alone of holes with windows
+may fail to mesh (a Gmsh boundary error, also with `open_pores`): a smaller `h`,
+`MeshOptions(surface_algorithm = :meshadapt)` or the solid with it usually meshes.
 
 ## Void phases and foams
 
