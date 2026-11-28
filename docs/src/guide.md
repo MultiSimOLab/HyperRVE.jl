@@ -362,6 +362,25 @@ The fluid is the largest network that percolates across the cell; the other pore
 (`a.closed`, a void phase with the solid); `isolated = :keep` keeps them in the fluid. Do not fuse the fluid
 phase.
 
+### Perforations
+
+Closed-cell foams such as Alporas are made sound absorbing mostly by drilling holes.
+`perforate(f; diameter, spacing, axis, position)` drills straight through-holes ([`Fibre`](@ref)s
+parallel to `axis`) on a rectangular lattice, by default one per cell at its centre (the
+periodic unit cell of a perforated foam); every pore a hole crosses joins the fluid:
+
+```julia
+a = perforate(f; diameter = 1.5)                                     # one hole per cell, along z
+b = perforate(f; diameter = 1.0, spacing = 5.0, windows = (open_fraction = 0.2,), rng = 3)
+rve = RVE(f.cell, foam_phases(a); matrix = :aluminium)               # air, closed pores, solid
+```
+
+`spacing` must divide the cell; a hole axis between 0.5 and 1.25 radii from a cell face
+parallel to it does not mesh and is refused. `windows` takes the keywords of `open_pores`, and
+the connectivity is computed with pores, windows and holes together (separate holes without
+windows make separate fluid networks, with a warning). `foam_phases(a)` builds the air phase
+and, if there are closed pores, the void phase after it.
+
 ## Void phases and foams
 
 `Phase(name, items; void = true)` makes empty space: what it covers is removed from the mesh

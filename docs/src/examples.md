@@ -30,5 +30,6 @@ mesh next to the script.
 | `23_laguerre.jl` | dense polydisperse packing, Laguerre polycrystal with a grain size distribution, closed-cell foam on Laguerre cells, rounded pores (metal foam), 2D |
 | `24_metal_foam.jl` | closed-cell metal foam with a truncated log-normal pore size distribution, polyhedral and rounded pores |
 | `25_acoustic_foam.jl` | acoustic metal foam: windows between pores, connected air phase alone and with the solid |
+| `26_perforated_foam.jl` | perforated metal foam: straight holes through a closed-cell foam, with and without windows |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.
