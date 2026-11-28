@@ -301,20 +301,23 @@ function _rounded_pores(t::Tessellation{D}, w, r) where {D}
     return items, lost
 end
 
-# a clipped pore as a Polyhedron. Long thin cells leave vertices closer than OCC's tolerance
-# (1e-7 of the body): they are merged, and the faces they touch split into triangles.
+# a clipped pore as a Polyhedron. Long thin cells leave vertices (and so edges) closer than
+# OCC's tolerance, which the geometry build rejects (edges shorter than 1e-7 of the cell):
+# vertices closer than 2e-7 of the cell are merged, repeated indices removed from the faces,
+# and the faces with a merged vertex split into triangles.
 function _pore_polyhedron(Q::_Poly3, cell)
     v, f = _indexed(Q, 1e-9 * maximum(cell.size))
-    try
-        return Polyhedron([cell.origin .+ p for p in v], f)
-    catch e
-        e isa ArgumentError || rethrow()
-        lo = ntuple(k -> minimum(p -> p[k], v), 3)
-        hi = ntuple(k -> maximum(p -> p[k], v), 3)
-        w = _merge_close(v, f, 1e-6 * maximum(hi .- lo))
-        w === nothing && rethrow()
-        return Polyhedron([cell.origin .+ p for p in w[1]], w[2])
-    end
+    v, f = _merge_close(v, f, 2e-7 * maximum(cell.size))
+    return Polyhedron([cell.origin .+ p for p in v], f)
+end
+
+# a face loop that deviates from its plane by more than tol (Polyhedron accepts 1e-9 of its size)
+function _nonplanar(v, g, tol)
+    n = _face_normal(v, g)
+    nn = _norm(n)
+    nn > 0 || return true
+    u = n ./ nn
+    return any(i -> abs(_dot(v[i] .- v[g[1]], u)) > tol, g)
 end
 
 function _merge_close(v::Vector{NTuple{3,Float64}}, f::Vector{Vector{Int}}, tol)
@@ -328,7 +331,6 @@ function _merge_close(v::Vector{NTuple{3,Float64}}, f::Vector{Vector{Int}}, tol)
             a != b && (parent[max(a, b)] = min(a, b); merged = true)
         end
     end
-    merged || return nothing
     roots = unique(findr(i) for i in 1:n)
     id = Dict(r => k for (k, r) in enumerate(roots))
     cnt = zeros(Int, length(roots))
@@ -339,6 +341,7 @@ function _merge_close(v::Vector{NTuple{3,Float64}}, f::Vector{Vector{Int}}, tol)
         pos[k] = pos[k] .+ v[i]
     end
     pos = [pos[k] ./ cnt[k] for k in eachindex(pos)]
+    sz = maximum(k -> maximum(p -> p[k], pos) - minimum(p -> p[k], pos), 1:3)
     faces = Vector{Int}[]
     for face in f
         g = Int[]
@@ -348,7 +351,9 @@ function _merge_close(v::Vector{NTuple{3,Float64}}, f::Vector{Vector{Int}}, tol)
         end
         length(g) > 1 && g[end] == g[1] && pop!(g)
         length(unique(g)) >= 3 || continue
-        if length(g) > 3 && any(i -> cnt[id[findr(i)]] > 1, face)
+        if length(g) > 3 && (length(unique(g)) < length(g) || any(i -> cnt[id[findr(i)]] > 1, face) ||
+                             _nonplanar(pos, g, 1e-10 * sz))
+            g = unique(g)
             for k in 2:length(g)-1
                 push!(faces, [g[1], g[k], g[k+1]])
             end
