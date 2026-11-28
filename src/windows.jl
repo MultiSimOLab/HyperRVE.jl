@@ -105,21 +105,62 @@ warning).
 """
 function open_pores(f::Foam{3}; open_fraction::Real=0.3, window::Real=0.4, min_window=2 * f.wall,
                     select::Symbol=:uniform, isolated::Symbol=:closed, rng=Random.default_rng())
-    0 <= open_fraction <= 1 || throw(ArgumentError("open_pores: open_fraction must be in [0, 1]"))
-    0 < window < 1 || throw(ArgumentError("open_pores: window must be in (0, 1)"))
-    min_window isa Real && min_window >= 0 || throw(ArgumentError("open_pores: min_window must be a number >= 0"))
-    select in (:uniform, :area) || throw(ArgumentError("open_pores: select must be :uniform or :area"))
     isolated in (:closed, :keep) || throw(ArgumentError("open_pores: isolated must be :closed or :keep"))
+    _check_windows("open_pores", open_fraction, window, min_window, select)
     r = _rng(rng)
+    t = f.tessellation
+    N = length(t.loops)
+    per = t.cell.periodic
+    g = _foam_pores(f, "open_pores")
+    faces, cand, chosen = _choose_windows(f, g, open_fraction, window, min_window, select, r, "open_pores")
+    adj = [Tuple{Int,NTuple{3,Int}}[] for _ in 1:N]
+    _window_edges!(adj, chosen)
+    comp, perc, nc = _networks(adj, g.alive)
+    percolating = [any(d -> per[d] && perc[c][d], 1:3) for c in 1:nc]
+    # the fluid is one connected network: the largest (by pore volume) of those that percolate
+    # (without periodic directions, the largest component)
+    cvol = zeros(nc)
+    for i in 1:N
+        comp[i] > 0 && (cvol[comp[i]] += g.pv[i])
+    end
+    cands = any(per) ? [c for c in 1:nc if percolating[c]] : collect(1:nc)
+    main = isempty(cands) ? 0 : cands[argmax(cvol[cands])]
+    keep = isolated === :keep ? g.alive : [g.alive[i] && comp[i] == main for i in 1:N]
+    !any(keep) && @warn "open_pores: no connected network of pores percolates across the cell; raise open_fraction (all pores are returned as closed)"
+    fluidperc = ntuple(d -> per[d] && main > 0 && perc[main][d], 3)
+    any(keep) && any(d -> per[d] && !fluidperc[d], 1:3) &&
+        @warn "open_pores: the fluid does not percolate along the periodic direction(s) $(Tuple(d for d in 1:3 if per[d] && !fluidperc[d])); raise open_fraction"
+    windows, wd, wl, nw = _window_cylinders(t, chosen, keep)
+    fluid, closed = _split_pores(g.items, keep)
+    append!(fluid, windows)
+    V = prod(t.cell.size)
+    areas = sum(F[5] for F in faces)
+    report = (walls=length(faces), eligible=length(cand), windows=length(windows),
+              open_fraction=length(windows) / length(faces), open_area_fraction=sum(π * d^2 / 4 for d in wd; init=0.0) / areas,
+              windows_per_pore=sum(nw[keep]; init=0) / max(1, count(keep)), window_diameters=wd, window_lengths=wl,
+              components=nc, percolates=fluidperc, open_pores=count(keep), closed_pores=count(g.alive) - count(keep),
+              open_porosity=sum(g.pv[keep]; init=0.0) / V, porosity=sum(g.pv) / V)
+    return (fluid=fluid, closed=closed, windows=windows, report=report)
+end
+
+function _check_windows(caller, open_fraction, window, min_window, select)
+    0 <= open_fraction <= 1 || throw(ArgumentError("$caller: open_fraction must be in [0, 1]"))
+    0 < window < 1 || throw(ArgumentError("$caller: window must be in (0, 1)"))
+    min_window isa Real && min_window >= 0 || throw(ArgumentError("$caller: min_window must be a number >= 0"))
+    select in (:uniform, :area) || throw(ArgumentError("$caller: select must be :uniform or :area"))
+    return nothing
+end
+
+# the pores of a foam (items per grain), which grains keep a pore, the planes of every shrunk
+# pore and, for rounded pores, its ball (cell-local), and the pore volumes
+function _foam_pores(f::Foam{3}, caller)
     t = f.tessellation
     L = t.cell.size
     w = f.wall
     N = length(t.loops)
-    per = t.cell.periodic
     items, lost = f.rounding > 0 ? _rounded_pores(t, w, f.rounding) : _polyhedral_pores(t, w)
-    lost > 0 && @warn "open_pores: $lost grains vanish with wall = $w"
+    lost > 0 && @warn "$caller: $lost grains vanish with wall = $w"
     alive = [!isempty(g) for g in items]
-    # the planes of every shrunk pore and, for rounded pores, its ball (cell-local)
     pplanes = Vector{Vector{Tuple{NTuple{3,Float64},Float64}}}(undef, N)
     balls = Vector{Union{Nothing,Tuple{NTuple{3,Float64},Float64}}}(nothing, N)
     for i in 1:N
@@ -128,18 +169,29 @@ function open_pores(f::Foam{3}; open_fraction::Real=0.3, window::Real=0.4, min_w
         pplanes[i] = first(_body_planes(P))
         f.rounding > 0 && (balls[i] = _pore_ball(P, f.rounding, L))
     end
-    tol = 1e-9 * maximum(L)
-    inpore(q, i, s) = all(((n, b),) -> _dot(n, q) <= b + _dot(n, s) + tol, pplanes[i]) &&
-                      (balls[i] === nothing || _norm(q .- (balls[i][1] .+ s)) <= balls[i][2] + tol)
+    pv = [_pore_volume(t, i, w, f.rounding) for i in 1:N]
+    return (items=items, alive=alive, pplanes=pplanes, balls=balls, pv=pv, tol=1e-9 * maximum(L))
+end
+
+# whether the cell-local point q lies in the pore of grain i shifted by s
+_inpore(g, q, i, s) = all(((n, b),) -> _dot(n, q) <= b + _dot(n, s) + g.tol, g.pplanes[i]) &&
+                      (g.balls[i] === nothing || _norm(q .- (g.balls[i][1] .+ s)) <= g.balls[i][2] + g.tol)
+
+# candidate windows (one per eligible wall) and the ones chosen
+function _choose_windows(f::Foam{3}, g, open_fraction, window, min_window, select, r, caller)
+    t = f.tessellation
+    L = t.cell.size
+    w = f.wall
+    per = t.cell.periodic
     # depth at which the whole end disk of a window lies inside pore i (shifted by s); Inf if none
     function depth(c, d, rw, i, s)
         for h in range(w / 2 + 0.05rw, w / 2 + 4rw; length=40)
-            all(q -> inpore(q, i, s), _rim(c .+ h .* d, d, rw)) && return h
+            all(q -> _inpore(g, q, i, s), _rim(c .+ h .* d, d, rw)) && return h
         end
         return Inf
     end
-    faces = [F for F in _pore_faces(t) if alive[F[1]] && alive[F[2]]]
-    isempty(faces) && throw(ArgumentError("open_pores: the foam has no walls between pores"))
+    faces = [F for F in _pore_faces(t) if g.alive[F[1]] && g.alive[F[2]]]
+    isempty(faces) && throw(ArgumentError("$caller: the foam has no walls between pores"))
     # candidate windows: centre, normal (from i to j), radius, depths into i and j; a window
     # whose end disks do not fit inside the pores is narrowed (and dropped below min_window)
     cand = []
@@ -173,24 +225,33 @@ function open_pores(f::Foam{3}; open_fraction::Real=0.3, window::Real=0.4, min_w
     end
     nopen = round(Int, open_fraction * length(faces))
     nopen <= length(cand) ||
-        throw(ArgumentError(@sprintf("open_pores: only %d of the %d walls between pores can take a window of at least %.3g (open fraction up to %.3f); reduce min_window or window",
-                                     length(cand), length(faces), min_window, length(cand) / length(faces))))
+        throw(ArgumentError(@sprintf("%s: only %d of the %d walls between pores can take a window of at least %.3g (open fraction up to %.3f); reduce min_window or window",
+                                     caller, length(cand), length(faces), min_window, length(cand) / length(faces))))
     # :area: probability proportional to the wall area (Efraimidis–Spirakis keys log(u)/a,
     # with the areas relative to their mean so that the units do not matter)
     am = sum(c[9] for c in cand; init=0.0) / max(1, length(cand))
     keys = select === :uniform ? rand(r, length(cand)) : [log(rand(r)) / (c[9] / am) for c in cand]
     chosen = cand[sortperm(keys; rev=true)[1:nopen]]
-    # connectivity with lattice offsets: components and the directions they percolate along
-    adj = [Tuple{Int,NTuple{3,Int}}[] for _ in 1:N]
+    return faces, cand, chosen
+end
+
+function _window_edges!(adj, chosen)
     for (i, j, k) in chosen
         push!(adj[i], (j, k))
         push!(adj[j], (i, .-k))
     end
-    comp = zeros(Int, N)
-    pos = fill((0, 0, 0), N)
+    return adj
+end
+
+# connected components of a graph whose edges carry lattice offsets, and the directions along
+# which each component percolates (a cycle with a non-zero total offset)
+function _networks(adj, alive)
+    M = length(adj)
+    comp = zeros(Int, M)
+    pos = fill((0, 0, 0), M)
     perc = NTuple{3,Bool}[]
     nc = 0
-    for s in 1:N
+    for s in 1:M
         (alive[s] && comp[s] == 0) || continue
         nc += 1
         comp[s] = nc
@@ -215,25 +276,16 @@ function open_pores(f::Foam{3}; open_fraction::Real=0.3, window::Real=0.4, min_w
         end
         push!(perc, Tuple(p))
     end
-    percolating = [any(d -> per[d] && perc[c][d], 1:3) for c in 1:nc]
-    # the fluid is one connected network: the largest (by pore volume) of those that percolate
-    # (without periodic directions, the largest component)
-    pv = [_pore_volume(t, i, w, f.rounding) for i in 1:N]
-    cvol = zeros(nc)
-    for i in 1:N
-        comp[i] > 0 && (cvol[comp[i]] += pv[i])
-    end
-    cands = any(per) ? [c for c in 1:nc if percolating[c]] : collect(1:nc)
-    main = isempty(cands) ? 0 : cands[argmax(cvol[cands])]
-    keep = isolated === :keep ? alive : [alive[i] && comp[i] == main for i in 1:N]
-    !any(keep) && @warn "open_pores: no connected network of pores percolates across the cell; raise open_fraction (all pores are returned as closed)"
-    fluidperc = ntuple(d -> per[d] && main > 0 && perc[main][d], 3)
-    any(keep) && any(d -> per[d] && !fluidperc[d], 1:3) &&
-        @warn "open_pores: the fluid does not percolate along the periodic direction(s) $(Tuple(d for d in 1:3 if per[d] && !fluidperc[d])); raise open_fraction"
+    return comp, perc, nc
+end
+
+# the windows whose two pores are kept, as cylinders (absolute coordinates), with their
+# diameters and lengths and the windows per pore
+function _window_cylinders(t, chosen, keep)
     windows = Cylinder[]
     wd = Float64[]
     wl = Float64[]
-    nw = zeros(Int, N)
+    nw = zeros(Int, length(keep))
     for (i, j, k, c, n, rw, hi, hj) in chosen
         (keep[i] && keep[j]) || continue
         base = c .- hi .* n
@@ -243,20 +295,16 @@ function open_pores(f::Foam{3}; open_fraction::Real=0.3, window::Real=0.4, min_w
         nw[i] += 1
         nw[j] += 1
     end
+    return windows, wd, wl, nw
+end
+
+function _split_pores(items, keep)
     fluid = Geometry{3}[]
     closed = Geometry{3}[]
-    for i in 1:N
+    for i in eachindex(items)
         append!(keep[i] ? fluid : closed, items[i])
     end
-    append!(fluid, windows)
-    V = prod(L)
-    areas = sum(F[5] for F in faces)
-    report = (walls=length(faces), eligible=length(cand), windows=length(windows),
-              open_fraction=length(windows) / length(faces), open_area_fraction=sum(π * d^2 / 4 for d in wd; init=0.0) / areas,
-              windows_per_pore=sum(nw[keep]; init=0) / max(1, count(keep)), window_diameters=wd, window_lengths=wl,
-              components=nc, percolates=fluidperc, open_pores=count(keep), closed_pores=count(alive) - count(keep),
-              open_porosity=sum(pv[keep]; init=0.0) / V, porosity=sum(pv) / V)
-    return (fluid=fluid, closed=closed, windows=windows, report=report)
+    return fluid, closed
 end
 
 open_pores(::Foam{2}; kwargs...) = throw(ArgumentError("open_pores: only 3D foams"))
