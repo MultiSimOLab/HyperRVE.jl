@@ -29,5 +29,6 @@ mesh next to the script.
 | `22_tpms.jl` | triply periodic minimal surfaces (experimental): gyroid sheet in a matrix, Schwarz P network |
 | `23_laguerre.jl` | dense polydisperse packing, Laguerre polycrystal with a grain size distribution, closed-cell foam on Laguerre cells, rounded pores (metal foam), 2D |
 | `24_metal_foam.jl` | closed-cell metal foam with a truncated log-normal pore size distribution, polyhedral and rounded pores |
+| `25_acoustic_foam.jl` | acoustic metal foam: windows between pores, connected air phase alone and with the solid |
 
 Run them with `julia --project=. examples/01_bcc_spheres.jl` from the repository root.
