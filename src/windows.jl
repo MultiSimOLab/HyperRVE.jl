@@ -74,7 +74,9 @@ absorbs little sound; the windows and their size set the flow resistivity, the
 characteristic lengths and the tortuosity). Each window is a cylinder across the wall,
 normal to it, centred at the centre of the largest circle `ρ` inscribed in the wall, of radius
 `window · (ρ − wall)`, and long enough for both ends to open entirely into the two pores
-(it is narrowed when they do not fit; useful `window` up to about 0.6).
+(it is narrowed when they do not fit; useful `window` up to about 0.6). In rounded pores the
+wall thickens away from the flat membrane, so a window may be a short tube rather than an
+orifice of the wall thickness (`report.window_lengths`).
 
 - `open_fraction`: the fraction of the walls between pores that get a window (over all of
   them); only walls whose window would be at least `min_window` wide are eligible (an error
@@ -230,12 +232,14 @@ function open_pores(f::Foam{3}; open_fraction::Real=0.3, window::Real=0.4, min_w
         @warn "open_pores: the fluid does not percolate along the periodic direction(s) $(Tuple(d for d in 1:3 if per[d] && !fluidperc[d])); raise open_fraction"
     windows = Cylinder[]
     wd = Float64[]
+    wl = Float64[]
     nw = zeros(Int, N)
     for (i, j, k, c, n, rw, hi, hj) in chosen
         (keep[i] && keep[j]) || continue
         base = c .- hi .* n
         push!(windows, Cylinder(t.cell.origin .+ base, (hi + hj) .* n, rw))
         push!(wd, 2rw)
+        push!(wl, hi + hj)
         nw[i] += 1
         nw[j] += 1
     end
@@ -249,7 +253,7 @@ function open_pores(f::Foam{3}; open_fraction::Real=0.3, window::Real=0.4, min_w
     areas = sum(F[5] for F in faces)
     report = (walls=length(faces), eligible=length(cand), windows=length(windows),
               open_fraction=length(windows) / length(faces), open_area_fraction=sum(π * d^2 / 4 for d in wd; init=0.0) / areas,
-              windows_per_pore=sum(nw[keep]; init=0) / max(1, count(keep)), window_diameters=wd,
+              windows_per_pore=sum(nw[keep]; init=0) / max(1, count(keep)), window_diameters=wd, window_lengths=wl,
               components=nc, percolates=fluidperc, open_pores=count(keep), closed_pores=count(alive) - count(keep),
               open_porosity=sum(pv[keep]; init=0.0) / V, porosity=sum(pv) / V)
     return (fluid=fluid, closed=closed, windows=windows, report=report)

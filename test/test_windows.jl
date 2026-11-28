@@ -10,6 +10,7 @@ using HyperRVE, Test, Random
     @test 0 < r.open_area_fraction < 1
     @test r.eligible <= r.walls && length(a.windows) == r.windows == length(r.window_diameters)
     @test all(d -> d >= 2f.wall, r.window_diameters)
+    @test length(r.window_lengths) == r.windows && all(>(f.wall), r.window_lengths)
     @test r.percolates == (true, true, true)
     @test r.closed_pores <= 2 && r.open_pores + r.closed_pores == 16
     @test r.porosity ≈ 0.9 rtol = 1e-6
