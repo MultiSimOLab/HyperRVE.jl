@@ -23,7 +23,8 @@ periodicity and mesh it. Gmsh is initialised and finalised automatically; the re
   e.g. with rounded pores), try again up to `retries` (at most 3) times with every phase
   translated by a small shift along the periodic directions: the same periodic material, cut
   by the cell faces elsewhere. A warning gives the shift, and `res.rve` holds the shifted
-  phases (default 0; not for TPMS). Errors of the do-block are not retried.
+  phases (default 0; not for TPMS). A shift that fails in another way is skipped (the original
+  error is reported if no shift meshes). Errors of the do-block are not retried.
 - `interfaces`: create the interface physical groups (see below); `:union` creates only their
   union `interfaces` (for many phases, e.g. polycrystals: the result still lists every interface).
 
@@ -106,8 +107,10 @@ function _generate_retry(f, rve::RVE{D}; retries::Integer=0, kwargs...) where {D
             return res
         catch e
             e isa _CallbackError && throw(e.e)
-            _periodic_failure(e) || rethrow()
-            err = e
+            # a shifted copy may fail otherwise (e.g. a hole moved close to a face): try the next
+            # shift, and report the original failure if none meshes
+            k == 0 ? (_periodic_failure(e) || rethrow()) : (e isa ErrorException || _periodic_failure(e) || rethrow())
+            k == 0 && (err = e)
         end
     end
     throw(err)

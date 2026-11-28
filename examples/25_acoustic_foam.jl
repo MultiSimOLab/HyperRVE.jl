@@ -16,8 +16,6 @@ res = generate(RVE(f.cell, Phase(:air, a.fluid); matrix = nothing); h = 1.0, ret
 println("air fraction ", round(volume_fraction(res, :air); digits = 4), ", groups ", filter(n -> startswith(n, "interface"), interface_names(res)))
 
 # fluid and solid (closed pores, if any, stay empty)
-phases = [Phase(:air, a.fluid)]
-isempty(a.closed) || push!(phases, Phase(:closed, a.closed; void = true))
-res = generate(RVE(f.cell, phases; matrix = :aluminium); h = 1.0, retries = 3,
+res = generate(RVE(f.cell, foam_phases(a); matrix = :aluminium); h = 1.0, retries = 3,
                output = joinpath(@__DIR__, "acoustic_foam.msh"))
 println("air ", round(volume_fraction(res, :air); digits = 4), ", aluminium ", round(volume_fraction(res, :aluminium); digits = 4))

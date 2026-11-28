@@ -30,6 +30,7 @@ include("helpers.jl")
     @testset "Rounded pores" begin include("test_rounding.jl") end
     @testset "Metal foams" begin include("test_metalfoam.jl") end
     @testset "Foam windows" begin include("test_windows.jl") end
+    @testset "Perforated foams" begin include("test_perforations.jl") end
     @testset "Plate lattices" begin include("test_plates.jl") end
     @testset "Hollow struts" begin include("test_hollow.jl") end
     @testset "TPMS kernel" begin include("test_tpms.jl") end

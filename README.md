@@ -72,6 +72,7 @@ t = voronoi(cell; n = 8, rng = 1); pores(t; wall = wall_thickness(t, 0.15))     
 pores(t; wall = 0.01, rounding = pore_rounding(t, 0.15; wall = 0.01))                # rounded pores (metal foam)
 pores(laguerre_foam(; n = 30, diameter = truncated_lognormal(4.0; min = 2, max = 8), porosity = 0.9))  # pore sizes
 open_pores(laguerre_foam(; n = 16, diameter = 4.0, porosity = 0.9)).fluid             # windows and air phase (acoustics)
+perforate(laguerre_foam(; n = 16, diameter = 4.0, porosity = 0.9); diameter = 1.5).fluid  # drilled holes (acoustics)
 foam_struts(voronoi(cell; seeds = [(0, 0, 0), (0.5, 0.5, 0.5)]); radius = 0.035)       # Kelvin foam
 grain_phases(laguerre(cell; spheres = dense_spheres(cell; radius = 0.08, fraction = 0.55, rng = 1)))  # Laguerre
 random_spheres(cell; radius = 0.1, fraction = 0.2, rng = 3)                            # random packing
